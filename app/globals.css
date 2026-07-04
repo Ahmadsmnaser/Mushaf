@@ -1,0 +1,351 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens — drawn from the physical Madani mushaf itself:
+ * the deep-green leather of its cover is the single accent, gold appears
+ * only where a real mushaf carries gold (the gilded page edges), and the
+ * canvas is the warm paper the brief calls for.
+ */
+:root {
+  --paper: #efe6d4;
+  --sheet: #fffdf6;
+  --ink: #2a2521;
+  --ink-soft: #857a64;
+  --accent: #14472f; /* Madani cover green */
+  --gold: #b0925a; /* page gilding — hairlines only, never gradients */
+  --cover: #0f3a27; /* cover leather (landing page field) */
+  --gold-soft: #c8b482; /* stamped gold on the leather */
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-sheet: var(--sheet);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-accent: var(--accent);
+  --color-gold: var(--gold);
+  --color-cover: var(--cover);
+  --color-gold-soft: var(--gold-soft);
+  --font-display: var(--font-amiri), "Amiri", serif;
+  --font-ui: var(--font-plex-arabic), "IBM Plex Sans Arabic", sans-serif;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(ellipse 90% 70% at 50% 38%, rgba(255, 253, 245, 0.55), transparent 75%),
+    var(--paper);
+  color: var(--ink);
+  font-family: var(--font-plex-arabic), "IBM Plex Sans Arabic", sans-serif;
+  overflow: hidden; /* the mushaf never scrolls; navigation is by page flip */
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Landing page: the closed mushaf's green leather with faint tooled stars. */
+.cover-field {
+  background:
+    radial-gradient(ellipse 85% 65% at 50% 32%, rgba(46, 106, 74, 0.35), transparent 75%),
+    var(--cover);
+}
+
+.cover-pattern {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cg fill='none' stroke='%23c8b482' stroke-opacity='0.07'%3E%3Crect x='36' y='36' width='48' height='48'/%3E%3Crect x='36' y='36' width='48' height='48' transform='rotate(45 60 60)'/%3E%3Ccircle cx='60' cy='60' r='3.5'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* The bookmark ribbon (علامة) hanging over a page's top edge. */
+.ribbon {
+  width: 21px;
+  height: 58px;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--accent) 88%, black) 0,
+    var(--accent) 12px
+  );
+  border-top: 2px solid color-mix(in srgb, var(--gold) 70%, transparent);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%);
+  box-shadow: 0 3px 6px rgba(30, 24, 12, 0.3);
+}
+
+.ribbon-mini {
+  display: inline-block;
+  width: 9px;
+  height: 22px;
+  flex-shrink: 0;
+  align-self: center;
+  background: var(--accent);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 76%, 0 100%);
+}
+
+/* Dialogs ease in gently. */
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.modal-card {
+  animation: modal-in 180ms ease-out;
+}
+
+/* Book resting on a surface. */
+.book-shadow {
+  box-shadow:
+    0 34px 70px -24px rgba(52, 42, 22, 0.42),
+    0 10px 24px -10px rgba(52, 42, 22, 0.3);
+}
+
+/* Placed-on-the-desk entrance: one orchestrated moment on load. */
+@keyframes book-settle {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.985);
+  }
+}
+
+.book-enter {
+  animation: book-settle 650ms cubic-bezier(0.2, 0.6, 0.2, 1) both;
+}
+
+/*
+ * The gilded page-block edges (the design's signature): closed pages stacked
+ * against each side of the open spread. Fine vertical lines read as paper
+ * edges; the outer hairline is the gilding. Their widths encode the reader's
+ * real position in the 604 pages, so the block migrates from right to left
+ * as reading progresses — matching the flip direction.
+ */
+.page-edges {
+  background: repeating-linear-gradient(
+    90deg,
+    #faf4e3 0px,
+    #faf4e3 1.5px,
+    #b3a37e 1.5px,
+    #b3a37e 2.5px
+  );
+  transition: width 600ms ease;
+}
+
+.page-edges-right {
+  border-left: none;
+  border-right: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
+  border-radius: 0 2px 2px 0;
+  box-shadow: 6px 8px 18px -8px rgba(52, 42, 22, 0.35);
+}
+
+.page-edges-left {
+  border-left: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
+  border-radius: 2px 0 0 2px;
+  box-shadow: -6px 8px 18px -8px rgba(52, 42, 22, 0.35);
+}
+
+/*
+ * Page flip. The leaf is a two-faced half-spread hinged at the center spine,
+ * driven by a single progress value (0 → 1): rotateY(-180° · p) carries the
+ * right page over to the left (advance = right → left, RTL reading order),
+ * +180° · p mirrors it for going back. Auto flips transition the transform;
+ * dragging sets it directly from the pointer (.leaf-dragging kills the
+ * transition so the page sticks to the finger/cursor).
+ */
+.leaf-move {
+  transition: transform 460ms cubic-bezier(0.32, 0.08, 0.24, 1);
+}
+
+.leaf-dragging {
+  transition: none;
+}
+
+/* Shading pulse for auto flips (drag flips drive shading from progress). */
+@keyframes leaf-shade {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+.leaf-shade-anim {
+  animation: leaf-shade 460ms ease forwards;
+}
+
+/* Draggable page edges: a faint folded-corner affordance that strengthens on
+   hover, like a page corner asking to be turned. */
+.drag-strip {
+  cursor: grab;
+  touch-action: none;
+}
+
+.drag-strip:active {
+  cursor: grabbing;
+}
+
+.corner-hint {
+  position: absolute;
+  bottom: 0;
+  width: 44px;
+  height: 44px;
+  opacity: 0.14;
+  transition: opacity 250ms ease;
+  pointer-events: none;
+}
+
+.drag-strip:hover .corner-hint,
+.drag-strip:focus-visible .corner-hint {
+  opacity: 0.55;
+}
+
+.corner-hint-right {
+  right: 0;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+  background: linear-gradient(315deg, rgba(90, 74, 44, 0.55), rgba(90, 74, 44, 0.08) 55%, transparent 70%);
+}
+
+.corner-hint-left {
+  left: 0;
+  clip-path: polygon(0 0, 100% 100%, 0 100%);
+  background: linear-gradient(45deg, rgba(90, 74, 44, 0.55), rgba(90, 74, 44, 0.08) 55%, transparent 70%);
+}
+
+/*
+ * The physical book, layered instead of bordered: the leather cover board is
+ * an absolutely positioned layer BEHIND the pages, peeking out a few
+ * millimetres the way real boards do (a touch more at the bottom, where the
+ * book meets the surface), carrying its own sheen, bevel and the on-surface
+ * drop shadow. Same leather as the landing page; themes may darken it.
+ */
+.book-cover-layer {
+  position: absolute;
+  inset: -8px -11px -14px -11px;
+  border-radius: 10px;
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--cover) 82%, #6a8f72) 0%,
+    var(--cover) 42%,
+    color-mix(in srgb, var(--cover) 72%, black) 100%
+  );
+  box-shadow:
+    0 44px 80px -30px rgba(40, 30, 12, 0.55),
+    0 14px 30px -14px rgba(40, 30, 12, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.35),
+    inset 0 0 0 1px color-mix(in srgb, var(--gold-soft) 28%, transparent);
+}
+
+/* Faint paper depth on the open pages: darkened outer edges and a whisper of
+   top/bottom bow — gradients only, never touching the page pixels. */
+.page-depth {
+  background:
+    linear-gradient(to right, rgba(58, 44, 20, 0.07), transparent 2.5%),
+    linear-gradient(to left, rgba(58, 44, 20, 0.07), transparent 2.5%),
+    linear-gradient(
+      to bottom,
+      rgba(58, 44, 20, 0.05),
+      transparent 2%,
+      transparent 97%,
+      rgba(58, 44, 20, 0.08)
+    );
+}
+
+/* Layered spine gutter: a firmer shadow core where the pages dive into the
+   binding, flanked by the pale bow of the curling paper. */
+.book-spine {
+  background:
+    linear-gradient(
+      to right,
+      transparent,
+      rgba(0, 0, 0, 0.16) 36%,
+      rgba(0, 0, 0, 0.38) 50%,
+      rgba(0, 0, 0, 0.16) 64%,
+      transparent
+    ),
+    linear-gradient(
+      to right,
+      transparent 24%,
+      rgba(255, 255, 255, 0.16) 42%,
+      transparent 50%,
+      rgba(255, 255, 255, 0.16) 58%,
+      transparent 76%
+    );
+}
+
+/*
+ * Reader themes. Scoped to the reader root (data-reader-theme) so the landing
+ * page keeps its own cover styling. The Quran page images are never filtered —
+ * themes only touch the canvas and chrome surfaces around them.
+ */
+.reader-canvas {
+  background:
+    radial-gradient(ellipse 90% 70% at 50% 38%, var(--canvas-glow), transparent 75%),
+    var(--canvas);
+}
+
+[data-reader-theme] {
+  --canvas: var(--paper);
+  --canvas-glow: rgba(255, 253, 245, 0.5);
+  --canvas-fg: var(--ink-soft);
+}
+
+[data-reader-theme="white"] {
+  --canvas: #f6f5f1;
+  --canvas-glow: rgba(255, 255, 255, 0.6);
+}
+
+[data-reader-theme="green"] {
+  --canvas: #0f3a27;
+  --canvas-glow: rgba(46, 106, 74, 0.3);
+  --canvas-fg: #cdc2a4;
+}
+
+[data-reader-theme="navy"] {
+  --canvas: #16243c;
+  --canvas-glow: rgba(56, 82, 128, 0.3);
+  --canvas-fg: #c0bda9;
+}
+
+[data-reader-theme="navy"] .book-cover-layer {
+  --cover: #122036;
+}
+
+[data-reader-theme="night"] {
+  --canvas: #131211;
+  --canvas-glow: rgba(255, 255, 255, 0.03);
+  --canvas-fg: #97907e;
+  --paper: #211f1c;
+  --sheet: #2b2925;
+  --ink: #e8e2d4;
+  --ink-soft: #a59d8a;
+  --accent: #6aa885;
+}
+
+[data-reader-theme="night"] .book-cover-layer {
+  --cover: #0b2018;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* 1ms (not none) so transitionend still fires and the flip commits. */
+  .leaf-move {
+    transition-duration: 1ms;
+  }
+  .book-enter {
+    animation: none;
+  }
+  .page-edges,
+  .corner-hint {
+    transition: none;
+  }
+  .modal-card {
+    animation: none;
+  }
+  .leaf-shade-anim {
+    animation: none;
+  }
+}
