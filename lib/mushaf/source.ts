@@ -13,8 +13,14 @@
 // credentials stay server-side; the interface below should not need to change.
 
 import indexes from "./data/indexes.json";
+import {
+  CURRENT_MUSHAF_SOURCE_ID,
+  MUSHAF_SOURCES,
+  formatMushafPageUrl,
+} from "@/lib/readerConfig";
 
-export const PAGE_COUNT = 604;
+export const CURRENT_MUSHAF_SOURCE = MUSHAF_SOURCES[CURRENT_MUSHAF_SOURCE_ID];
+export const PAGE_COUNT = CURRENT_MUSHAF_SOURCE.pageCount;
 // Intrinsic size of every page image in the KSU set.
 export const PAGE_WIDTH = 622;
 export const PAGE_HEIGHT = 917;
@@ -60,7 +66,7 @@ export function clampPage(n: number): number {
 }
 
 export function getPageImageUrl(pageNumber: number): string {
-  return `/pages/${String(clampPage(pageNumber)).padStart(3, "0")}.png`;
+  return formatMushafPageUrl(CURRENT_MUSHAF_SOURCE, clampPage(pageNumber));
 }
 
 export function getSurahIndex(): SurahMeta[] {

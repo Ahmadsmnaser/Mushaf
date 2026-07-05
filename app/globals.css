@@ -167,10 +167,111 @@ body {
   transition: none;
 }
 
+/*
+ * The cast shadow lives on a NON-rotating wrapper, never on the leaf itself:
+ * `filter` forces the element's used transform-style to `flat`, which kills
+ * preserve-3d on the faces — the paper back face vanishes and the front face
+ * shows through mirrored past 90° (the mirrored-Quran bug).
+ */
+.leaf-lift {
+  --turn-progress: 0;
+  --turn-shade: 0;
+  filter: drop-shadow(
+    0 calc(8px + (18px * var(--turn-progress))) calc(14px + (24px * var(--turn-progress)))
+      rgba(20, 14, 4, 0.22)
+  );
+}
+
+.leaf-lift-move {
+  animation: page-lift 560ms cubic-bezier(0.34, 0.05, 0.2, 1) both;
+}
+
+.page-turn-leaf {
+  --turn-progress: 0;
+  --turn-shade: 0;
+  transform-style: preserve-3d;
+}
+
 /* Each face of the turning leaf is its own paper sheet. */
 .leaf-face {
-  background: #fffdf6;
-  box-shadow: 0 0 22px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+  background: var(--mushaf-paper);
+  box-shadow: var(--mushaf-leaf-shadow);
+}
+
+.leaf-face::before,
+.leaf-face::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.leaf-face::before {
+  background:
+    linear-gradient(to right, rgba(255, 255, 248, 0.16), transparent 18%),
+    linear-gradient(to left, rgba(42, 30, 10, 0.18), transparent 24%);
+  opacity: calc(0.08 + (0.26 * var(--turn-progress)));
+}
+
+.leaf-face::after {
+  opacity: calc(0.5 * var(--turn-progress));
+}
+
+.turn-grab-top .leaf-face::after {
+  background:
+    radial-gradient(ellipse 80% 34% at 100% 0%, rgba(255, 255, 248, 0.3), transparent 65%),
+    linear-gradient(to bottom, rgba(42, 30, 10, 0.14), transparent 18%);
+}
+
+.turn-grab-bottom .leaf-face::after {
+  background:
+    radial-gradient(ellipse 80% 34% at 100% 100%, rgba(255, 255, 248, 0.28), transparent 65%),
+    linear-gradient(to top, rgba(42, 30, 10, 0.14), transparent 18%);
+}
+
+.turn-grab-middle .leaf-face::after {
+  background:
+    radial-gradient(ellipse 28% 70% at 100% 50%, rgba(255, 255, 248, 0.22), transparent 72%),
+    linear-gradient(to left, rgba(42, 30, 10, 0.1), transparent 18%);
+}
+
+.leaf-paper-back {
+  background: var(--mushaf-paper-back);
+}
+
+.leaf-paper-back::after {
+  content: "";
+  position: absolute;
+  inset: 8%;
+  border: 1px solid rgba(176, 146, 90, 0.12);
+  box-shadow: inset 0 0 18px rgba(80, 60, 25, 0.035);
+  pointer-events: none;
+}
+
+@keyframes page-lift {
+  0%,
+  100% {
+    filter: drop-shadow(0 8px 14px rgba(20, 14, 4, 0.12));
+  }
+  50% {
+    filter: drop-shadow(0 24px 38px rgba(20, 14, 4, 0.24));
+  }
+}
+
+@keyframes page-curl {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 0.44;
+  }
+}
+
+.leaf-move .leaf-face::after {
+  animation: page-curl 560ms ease both;
 }
 
 /* Shading pulse for auto flips (drag flips drive shading from progress). */
@@ -226,6 +327,32 @@ body {
   background: linear-gradient(45deg, rgba(90, 74, 44, 0.55), rgba(90, 74, 44, 0.08) 55%, transparent 70%);
 }
 
+.reader-nav-zone {
+  color: var(--canvas-fg);
+}
+
+.reader-nav-affordance {
+  opacity: 0;
+  transform: translateY(-50%) scale(0.96);
+}
+
+.reader-nav-awake .reader-nav-affordance {
+  opacity: 0.32;
+}
+
+.reader-nav-idle:hover .reader-nav-affordance,
+.reader-nav-awake:hover .reader-nav-affordance,
+.reader-nav-zone:focus-visible .reader-nav-affordance {
+  opacity: 0.72;
+  transform: translateY(-50%) scale(1);
+  border-color: color-mix(in srgb, var(--gold) 36%, transparent);
+  background: color-mix(in srgb, var(--sheet) 30%, transparent);
+}
+
+.reader-nav-hidden {
+  pointer-events: none;
+}
+
 /*
  * The open mushaf's paper surface. Deliberately quiet: the sheet itself on a
  * fixed paper white (the KSU page PNGs are transparent — this IS the paper),
@@ -234,13 +361,27 @@ body {
  * the page.
  */
 .paper-sheet {
-  background: #fffdf6;
-  border-radius: 3px;
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--gold) 34%, transparent),
-    0 2px 6px -2px rgba(52, 42, 22, 0.3),
-    0 18px 44px -18px rgba(52, 42, 22, 0.42),
-    0 48px 100px -44px rgba(52, 42, 22, 0.38);
+  background: var(--mushaf-paper);
+  border-radius: var(--mushaf-sheet-radius);
+  box-shadow: var(--mushaf-sheet-shadow);
+}
+
+/* A quiet inset frame for each Quran page: surface, hairline, then image. */
+.quran-page-surface {
+  background: var(--mushaf-paper);
+}
+
+.quran-page-frame {
+  inset: var(--mushaf-page-frame-inset);
+  background: var(--mushaf-frame-bg);
+  border: 1px solid color-mix(in srgb, var(--gold) 24%, transparent);
+  border-radius: var(--mushaf-page-radius);
+  box-shadow: var(--mushaf-page-frame-shadow);
+}
+
+.quran-page-image-slot {
+  inset: var(--mushaf-image-slot-inset);
+  background: var(--mushaf-image-slot-bg);
 }
 
 /* Where the book meets the surface: a soft ellipse, no hard edges. */
@@ -253,7 +394,7 @@ body {
   z-index: -1;
   background: radial-gradient(
     ellipse 50% 50% at 50% 50%,
-    rgba(40, 30, 14, 0.32),
+    var(--mushaf-desk-shadow),
     transparent 70%
   );
   pointer-events: none;
@@ -262,16 +403,7 @@ body {
 /* Faint paper depth on the open pages: darkened outer edges and a whisper of
    top/bottom bow — gradients only, never touching the page pixels. */
 .page-depth {
-  background:
-    linear-gradient(to right, rgba(58, 44, 20, 0.06), transparent 2.5%),
-    linear-gradient(to left, rgba(58, 44, 20, 0.06), transparent 2.5%),
-    linear-gradient(
-      to bottom,
-      rgba(58, 44, 20, 0.05),
-      transparent 2%,
-      transparent 97%,
-      rgba(58, 44, 20, 0.08)
-    );
+  background: var(--mushaf-page-depth);
 }
 
 /*
@@ -330,43 +462,81 @@ body {
  * grain so the canvas reads as a surface rather than a flat fill.
  */
 .reader-canvas {
+  isolation: isolate;
+  background: var(--canvas);
+}
+
+.reader-canvas::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
   background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.035 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E"),
-    radial-gradient(ellipse 130% 100% at 50% 108%, rgba(40, 30, 14, 0.13), transparent 62%),
-    radial-gradient(ellipse 90% 70% at 50% 38%, var(--canvas-glow), transparent 75%),
-    var(--canvas);
-  background-repeat: repeat, no-repeat, no-repeat, no-repeat;
-  background-size: 160px 160px, auto, auto, auto;
+    radial-gradient(ellipse 125% 95% at 50% 50%, transparent 56%, var(--canvas-vignette) 100%),
+    var(--canvas-texture),
+    var(--canvas-pattern),
+    radial-gradient(ellipse 82% 58% at 50% 42%, var(--canvas-glow), transparent 72%),
+    radial-gradient(ellipse 150% 110% at 50% 112%, var(--canvas-floor-shadow), transparent 64%);
+  background-repeat: no-repeat, repeat, repeat, no-repeat, no-repeat;
+  background-size: auto, 180px 180px, var(--canvas-pattern-size), auto, auto;
+  opacity: var(--canvas-atmosphere-opacity);
 }
 
 [data-reader-theme] {
   --canvas: var(--paper);
-  --canvas-glow: rgba(255, 253, 245, 0.5);
+  --canvas-glow: rgba(255, 251, 238, 0.48);
+  --canvas-floor-shadow: rgba(84, 58, 25, 0.14);
+  --canvas-vignette: rgba(92, 64, 30, 0.1);
   --canvas-fg: var(--ink-soft);
+  --canvas-atmosphere-opacity: 1;
+  --canvas-pattern: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280' viewBox='0 0 280 280' fill='none'%3E%3Cg stroke='%237a5730' stroke-opacity='0.105' stroke-width='1.1'%3E%3Cpath d='M140 22 179 101 258 140 179 179 140 258 101 179 22 140 101 101Z'/%3E%3Cpath d='M140 58 222 140 140 222 58 140Z'/%3E%3Cpath d='M140 88 192 140 140 192 88 140Z'/%3E%3Ccircle cx='140' cy='140' r='82'/%3E%3C/g%3E%3Cg stroke='%23ffffff' stroke-opacity='0.12' stroke-width='1'%3E%3Cpath d='M0 140h280M140 0v280'/%3E%3C/g%3E%3C/svg%3E");
+  --canvas-pattern-size: 280px 280px;
+  --canvas-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.78' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.42 0 0 0 0 0.32 0 0 0 0 0.18 0 0 0 0.055 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 [data-reader-theme="white"] {
   --canvas: #f6f5f1;
-  --canvas-glow: rgba(255, 255, 255, 0.6);
+  --canvas-glow: rgba(255, 255, 255, 0.68);
+  --canvas-floor-shadow: rgba(120, 102, 78, 0.12);
+  --canvas-vignette: rgba(112, 98, 78, 0.11);
+  --canvas-pattern: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280' viewBox='0 0 280 280' fill='none'%3E%3Cg stroke='%23847864' stroke-opacity='0.095' stroke-width='1.05'%3E%3Cpath d='M140 22 179 101 258 140 179 179 140 258 101 179 22 140 101 101Z'/%3E%3Cpath d='M140 58 222 140 140 222 58 140Z'/%3E%3Cpath d='M140 88 192 140 140 192 88 140Z'/%3E%3Ccircle cx='140' cy='140' r='82'/%3E%3C/g%3E%3Cg stroke='%23ffffff' stroke-opacity='0.38' stroke-width='1'%3E%3Cpath d='M0 140h280M140 0v280'/%3E%3C/g%3E%3C/svg%3E");
+  --canvas-pattern-size: 280px 280px;
+  --canvas-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.42 0 0 0 0 0.36 0 0 0 0 0.28 0 0 0 0.045 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 [data-reader-theme="green"] {
-  --canvas: #0f3a27;
-  --canvas-glow: rgba(46, 106, 74, 0.3);
+  --canvas: #0c3222;
+  --canvas-glow: rgba(128, 168, 116, 0.38);
+  --canvas-floor-shadow: rgba(1, 13, 8, 0.38);
+  --canvas-vignette: rgba(0, 8, 5, 0.34);
   --canvas-fg: #cdc2a4;
+  --canvas-pattern: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280' viewBox='0 0 280 280' fill='none'%3E%3Cg stroke='%23c8b482' stroke-opacity='0.11' stroke-width='1.15'%3E%3Cpath d='M140 22 179 101 258 140 179 179 140 258 101 179 22 140 101 101Z'/%3E%3Cpath d='M140 58 222 140 140 222 58 140Z'/%3E%3Cpath d='M140 88 192 140 140 192 88 140Z'/%3E%3Ccircle cx='140' cy='140' r='82'/%3E%3C/g%3E%3Cg stroke='%23ffffff' stroke-opacity='0.035' stroke-width='1'%3E%3Cpath d='M0 140h280M140 0v280'/%3E%3C/g%3E%3C/svg%3E");
+  --canvas-pattern-size: 280px 280px;
+  --canvas-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.78 0 0 0 0 0.68 0 0 0 0 0.48 0 0 0 0.06 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 [data-reader-theme="navy"] {
   --canvas: #16243c;
-  --canvas-glow: rgba(56, 82, 128, 0.3);
+  --canvas-glow: rgba(86, 112, 164, 0.34);
+  --canvas-floor-shadow: rgba(3, 10, 24, 0.36);
+  --canvas-vignette: rgba(2, 7, 18, 0.34);
   --canvas-fg: #c0bda9;
+  --canvas-pattern: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280' viewBox='0 0 280 280' fill='none'%3E%3Cg stroke='%23c5b88d' stroke-opacity='0.105' stroke-width='1.1'%3E%3Cpath d='M140 22 179 101 258 140 179 179 140 258 101 179 22 140 101 101Z'/%3E%3Cpath d='M140 58 222 140 140 222 58 140Z'/%3E%3Cpath d='M140 88 192 140 140 192 88 140Z'/%3E%3Ccircle cx='140' cy='140' r='82'/%3E%3C/g%3E%3Cg stroke='%238aa0ca' stroke-opacity='0.055' stroke-width='1'%3E%3Cpath d='M0 140h280M140 0v280'/%3E%3C/g%3E%3C/svg%3E");
+  --canvas-pattern-size: 280px 280px;
+  --canvas-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.74' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.62 0 0 0 0 0.66 0 0 0 0 0.78 0 0 0 0.055 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
   --cover: #122036;
 }
 
+[data-reader-theme="black"],
 [data-reader-theme="night"] {
   --canvas: #131211;
-  --canvas-glow: rgba(255, 255, 255, 0.03);
+  --canvas-glow: rgba(166, 142, 92, 0.12);
+  --canvas-floor-shadow: rgba(0, 0, 0, 0.46);
+  --canvas-vignette: rgba(0, 0, 0, 0.42);
   --canvas-fg: #97907e;
+  --canvas-pattern: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280' viewBox='0 0 280 280' fill='none'%3E%3Cg stroke='%239a8557' stroke-opacity='0.095' stroke-width='1.05'%3E%3Cpath d='M140 22 179 101 258 140 179 179 140 258 101 179 22 140 101 101Z'/%3E%3Cpath d='M140 58 222 140 140 222 58 140Z'/%3E%3Cpath d='M140 88 192 140 140 192 88 140Z'/%3E%3Ccircle cx='140' cy='140' r='82'/%3E%3C/g%3E%3Cg stroke='%23ffffff' stroke-opacity='0.025' stroke-width='1'%3E%3Cpath d='M0 140h280M140 0v280'/%3E%3C/g%3E%3C/svg%3E");
+  --canvas-pattern-size: 280px 280px;
+  --canvas-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.62 0 0 0 0 0.54 0 0 0 0 0.38 0 0 0 0.06 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
   --paper: #211f1c;
   --sheet: #2b2925;
   --ink: #e8e2d4;
@@ -377,10 +547,214 @@ body {
   --gold-soft: #9a8557;
 }
 
+/*
+ * Mushaf styles. These alter only the physical presentation around the page
+ * image: paper backing, frame hairlines, page depth and shadows. Quran PNG
+ * pixels are never filtered, recolored, blended or distorted.
+ */
+[data-mushaf-style] {
+  --mushaf-paper: #fffdf6;
+  --mushaf-frame-bg: #fffdf6;
+  --mushaf-image-slot-bg: #fffdf6;
+  --mushaf-page-frame-inset: 1.05%;
+  --mushaf-image-slot-inset: 0.65%;
+  --mushaf-sheet-radius: 3px;
+  --mushaf-page-radius: 2px;
+  --mushaf-sheet-shadow:
+    0 0 0 1px color-mix(in srgb, var(--gold) 34%, transparent),
+    0 2px 6px -2px rgba(52, 42, 22, 0.3),
+    0 18px 44px -18px rgba(52, 42, 22, 0.42),
+    0 48px 100px -44px rgba(52, 42, 22, 0.38);
+  --mushaf-page-frame-shadow:
+    inset 0 0 0 1px rgba(255, 255, 250, 0.72),
+    inset 0 0 18px rgba(70, 52, 20, 0.045);
+  --mushaf-leaf-shadow:
+    inset 0 0 0 1px rgba(160, 132, 78, 0.12),
+    0 0 22px rgba(0, 0, 0, 0.18);
+  --mushaf-paper-back:
+    linear-gradient(to right, rgba(80, 60, 25, 0.06), transparent 12%, transparent 88%, rgba(80, 60, 25, 0.08)),
+    linear-gradient(to bottom, rgba(255, 255, 250, 0.52), transparent 42%),
+    var(--mushaf-paper);
+  --mushaf-page-depth:
+    linear-gradient(to right, rgba(58, 44, 20, 0.06), transparent 2.5%),
+    linear-gradient(to left, rgba(58, 44, 20, 0.06), transparent 2.5%),
+    linear-gradient(
+      to bottom,
+      rgba(58, 44, 20, 0.05),
+      transparent 2%,
+      transparent 97%,
+      rgba(58, 44, 20, 0.08)
+    );
+  --mushaf-desk-shadow: rgba(40, 30, 14, 0.32);
+}
+
+[data-mushaf-style="premiumPaper"] {
+  --mushaf-paper: #fbf3df;
+  --mushaf-frame-bg: #fcf6e8;
+  --mushaf-image-slot-bg: #fffaf0;
+  --mushaf-page-frame-inset: 1.3%;
+  --mushaf-image-slot-inset: 0.85%;
+  --mushaf-sheet-radius: 5px;
+  --mushaf-page-radius: 3px;
+  --mushaf-sheet-shadow:
+    0 0 0 1px color-mix(in srgb, var(--gold) 44%, transparent),
+    0 3px 8px -2px rgba(52, 42, 22, 0.34),
+    0 22px 52px -20px rgba(52, 42, 22, 0.48),
+    0 58px 116px -46px rgba(52, 42, 22, 0.44);
+  --mushaf-page-frame-shadow:
+    inset 0 0 0 1px rgba(255, 255, 250, 0.78),
+    inset 0 0 24px rgba(92, 64, 24, 0.07);
+  --mushaf-leaf-shadow:
+    inset 0 0 0 1px rgba(176, 146, 90, 0.18),
+    0 0 26px rgba(40, 28, 10, 0.2);
+  --mushaf-paper-back:
+    linear-gradient(to right, rgba(92, 64, 24, 0.08), transparent 13%, transparent 87%, rgba(92, 64, 24, 0.1)),
+    linear-gradient(to bottom, rgba(255, 255, 248, 0.58), transparent 44%),
+    var(--mushaf-paper);
+  --mushaf-page-depth:
+    linear-gradient(to right, rgba(70, 48, 18, 0.075), transparent 2.8%),
+    linear-gradient(to left, rgba(70, 48, 18, 0.075), transparent 2.8%),
+    linear-gradient(
+      to bottom,
+      rgba(70, 48, 18, 0.06),
+      transparent 2.4%,
+      transparent 96.5%,
+      rgba(70, 48, 18, 0.095)
+    );
+  --mushaf-desk-shadow: rgba(44, 31, 12, 0.36);
+}
+
 /* Soft canvas glow rising behind the toolbar. */
 .toolbar-glow {
   background: linear-gradient(to top, var(--canvas-glow), transparent 78%);
   opacity: 0.7;
+}
+
+.reader-toolbar-shell {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: center;
+  padding-bottom: 1rem;
+  pointer-events: auto;
+}
+
+.reader-toolbar-panel {
+  transition:
+    opacity 300ms cubic-bezier(0.2, 0.65, 0.2, 1),
+    transform 300ms cubic-bezier(0.2, 0.65, 0.2, 1);
+  will-change: opacity, transform;
+}
+
+.reader-toolbar-caption {
+  position: relative;
+  overflow: visible;
+}
+
+.reader-toolbar-caption-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  z-index: 2;
+  width: max-content;
+  max-width: min(76vw, 320px);
+  padding: 10px 13px;
+  border: 1px solid color-mix(in srgb, var(--gold) 28%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--sheet) 88%, transparent);
+  box-shadow:
+    0 16px 34px -20px rgba(20, 14, 4, 0.48),
+    inset 0 1px 0 rgba(255, 255, 255, 0.42);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.65;
+  text-align: right;
+  white-space: pre-line;
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.reader-toolbar-caption:hover .reader-toolbar-caption-popover,
+.reader-toolbar-caption:focus-visible .reader-toolbar-caption-popover {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.reader-toolbar-glow {
+  inset: auto 0 0;
+  height: 96px;
+  background: linear-gradient(to top, var(--canvas-glow), transparent 78%);
+  opacity: 0.7;
+}
+
+.reader-toolbar-awake .reader-toolbar-panel,
+.reader-toolbar-idle:hover .reader-toolbar-panel,
+.reader-toolbar-idle:focus-within .reader-toolbar-panel {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.reader-toolbar-idle .reader-toolbar-panel,
+.reader-toolbar-closed .reader-toolbar-panel {
+  opacity: 0;
+  transform: translateY(16px);
+  pointer-events: none;
+}
+
+.reader-toolbar-closed {
+  pointer-events: none;
+}
+
+@media (min-width: 1024px) {
+  .reader-toolbar-shell {
+    inset: 0 0 0 auto;
+    width: 88px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 18px 0 0;
+  }
+
+  .reader-toolbar-glow {
+    top: 50%;
+    right: 0;
+    bottom: auto;
+    left: auto;
+    width: 88px;
+    height: min(72svh, 620px);
+    background: radial-gradient(
+      ellipse 75% 50% at 100% 50%,
+      var(--canvas-glow),
+      transparent 72%
+    );
+    transform: translateY(-50%);
+    opacity: 0.58;
+  }
+
+  .reader-toolbar-idle .reader-toolbar-panel,
+  .reader-toolbar-closed .reader-toolbar-panel {
+    transform: translateX(22px);
+  }
+
+  .reader-toolbar-caption-popover {
+    top: 4px;
+    right: calc(100% + 12px);
+    bottom: auto;
+    max-width: min(32vw, 360px);
+    transform: translateX(6px);
+  }
+
+  .reader-toolbar-caption:hover .reader-toolbar-caption-popover,
+  .reader-toolbar-caption:focus-visible .reader-toolbar-caption-popover {
+    transform: translateX(0);
+  }
 }
 
 /*
@@ -480,7 +854,7 @@ body {
   background:
     linear-gradient(to left, rgba(58, 44, 20, 0.05), transparent 6%),
     linear-gradient(to right, rgba(58, 44, 20, 0.05), transparent 6%),
-    var(--sheet);
+    var(--mushaf-paper);
   border-radius: 3px;
   box-shadow:
     inset 0 0 24px rgba(52, 42, 22, 0.1),
@@ -500,6 +874,10 @@ body {
   .leaf-move,
   .leaf-release {
     transition-duration: 1ms;
+    animation: none;
+  }
+  .leaf-lift-move {
+    animation: none;
   }
   /* The state machine settles instantly under reduced motion (the hook
      skips transitional phases); kill the choreography too. */
@@ -516,10 +894,20 @@ body {
   .corner-hint {
     transition: none;
   }
+  .reader-toolbar-panel {
+    transition: opacity 120ms ease;
+    transform: none !important;
+  }
   .modal-card {
     animation: none;
   }
   .leaf-shade-anim {
     animation: none;
+  }
+  .leaf-move .leaf-face::after {
+    animation: none;
+  }
+  .reader-nav-affordance {
+    transition: opacity 120ms ease;
   }
 }

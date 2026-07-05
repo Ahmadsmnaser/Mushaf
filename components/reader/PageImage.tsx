@@ -7,6 +7,18 @@ const arNum = (n: number) => n.toLocaleString("ar-EG");
 
 type Status = "loading" | "ready" | "error";
 
+function PageSurface({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="quran-page-surface relative h-full w-full">
+      <div className="quran-page-frame absolute inset-[1.05%]">
+        <div className="quran-page-image-slot absolute inset-[0.65%]">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * One mushaf page: the image on a paper-toned sheet, with a quiet skeleton
  * while loading and a retry state on failure — never a blank rectangle.
@@ -25,22 +37,24 @@ export default function PageImage({ page }: { page: number }) {
 
   if (status === "error") {
     return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-sheet text-ink-soft">
-        <p className="text-sm">تعذّر تحميل الصفحة {arNum(page)}</p>
-        <button
-          onClick={() => setAttempt((a) => a + 1)}
-          className="cursor-pointer rounded-md border border-ink-soft/40 px-3 py-1 text-xs transition-colors hover:border-accent hover:text-accent"
-        >
-          إعادة المحاولة
-        </button>
-      </div>
+      <PageSurface>
+        <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-ink-soft">
+          <p className="text-sm">تعذّر تحميل الصفحة {arNum(page)}</p>
+          <button
+            onClick={() => setAttempt((a) => a + 1)}
+            className="cursor-pointer rounded-md border border-ink-soft/40 px-3 py-1 text-xs transition-colors hover:border-accent hover:text-accent"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      </PageSurface>
     );
   }
 
   return (
     // Fixed paper white, never themed: the KSU page PNGs have a transparent
     // background, so this backing IS the paper of the mushaf page.
-    <div className="relative h-full w-full bg-[#fffdf6]">
+    <PageSurface>
       {/* eslint-disable-next-line @next/next/no-img-element -- 604 static
           same-size PNGs served from /public; the optimizer adds nothing */}
       <img
@@ -60,6 +74,6 @@ export default function PageImage({ page }: { page: number }) {
       {status === "loading" && (
         <div className="absolute inset-2 animate-pulse rounded-sm bg-ink-soft/5" />
       )}
-    </div>
+    </PageSurface>
   );
 }

@@ -33,8 +33,11 @@ const prefersReducedMotion = () =>
 export function useMushafState() {
   const [phase, setPhase] = useState<MushafPhase>("open");
   const phaseRef = useRef(phase);
-  phaseRef.current = phase;
   const timer = useRef<number | null>(null);
+
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
 
   const clearTimer = useCallback(() => {
     if (timer.current !== null) {

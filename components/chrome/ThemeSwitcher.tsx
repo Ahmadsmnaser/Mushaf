@@ -1,6 +1,6 @@
 "use client";
 
-import { READER_THEMES, type ReaderTheme } from "@/lib/useReaderTheme";
+import { READER_THEME_OPTIONS, type ReaderTheme } from "@/lib/readerSettings";
 
 export default function ThemeSwitcher({
   theme,
@@ -11,7 +11,7 @@ export default function ThemeSwitcher({
 }) {
   return (
     <div className="grid grid-cols-5 gap-1.5" role="radiogroup" aria-label="ثيم القراءة">
-      {READER_THEMES.map((t) => (
+      {READER_THEME_OPTIONS.map((t) => (
         <button
           key={t.id}
           role="radio"

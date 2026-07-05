@@ -16,8 +16,15 @@ export function saveLastRead(page: number): void {
 export function useLastRead(): number | null {
   const [lastRead, setLastRead] = useState<number | null>(null);
   useEffect(() => {
-    const stored = readJSON<number | 0>(KEYS.lastPage, 0, (v): v is number | 0 => v === 0 || isPage(v));
-    if (stored !== 0) setLastRead(stored);
+    const timer = window.setTimeout(() => {
+      const stored = readJSON<number | 0>(
+        KEYS.lastPage,
+        0,
+        (v): v is number | 0 => v === 0 || isPage(v)
+      );
+      if (stored !== 0) setLastRead(stored);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
   return lastRead;
 }

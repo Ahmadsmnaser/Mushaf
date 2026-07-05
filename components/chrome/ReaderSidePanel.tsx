@@ -1,7 +1,8 @@
 "use client";
 
+import MushafStyleSwitcher from "./MushafStyleSwitcher";
 import ThemeSwitcher from "./ThemeSwitcher";
-import type { ReaderTheme } from "@/lib/useReaderTheme";
+import type { MushafStyle, ReaderTheme } from "@/lib/readerSettings";
 
 const arNum = (n: number) => n.toLocaleString("ar-EG");
 
@@ -36,8 +37,10 @@ export default function ReaderSidePanel({
   onOpenIndex,
   onOpenBookmarks,
   bookmarkCount,
-  theme,
-  onThemeChange,
+  readerTheme,
+  onReaderThemeChange,
+  mushafStyle,
+  onMushafStyleChange,
   zoom,
   onZoomIn,
   onZoomOut,
@@ -50,8 +53,10 @@ export default function ReaderSidePanel({
   onOpenIndex: () => void;
   onOpenBookmarks: () => void;
   bookmarkCount: number;
-  theme: ReaderTheme;
-  onThemeChange: (t: ReaderTheme) => void;
+  readerTheme: ReaderTheme;
+  onReaderThemeChange: (t: ReaderTheme) => void;
+  mushafStyle: MushafStyle;
+  onMushafStyleChange: (style: MushafStyle) => void;
   zoom: number;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -117,11 +122,16 @@ export default function ReaderSidePanel({
         </section>
 
         <section>
-          <h3 className="mb-2 font-display text-[17px] text-accent">الثيم</h3>
-          <ThemeSwitcher theme={theme} onChange={onThemeChange} />
-          <p className="mt-2 text-[11px] leading-relaxed text-ink-soft">
-            يتغيّر محيط القراءة فقط — صفحة المصحف تبقى كما هي.
-          </p>
+          <h3 className="mb-2 font-display text-[17px] text-accent">ثيم القارئ</h3>
+          <ThemeSwitcher theme={readerTheme} onChange={onReaderThemeChange} />
+        </section>
+
+        <section>
+          <h3 className="mb-2 font-display text-[17px] text-accent">مظهر المصحف</h3>
+          <MushafStyleSwitcher
+            mushafStyle={mushafStyle}
+            onChange={onMushafStyleChange}
+          />
         </section>
 
         <section>

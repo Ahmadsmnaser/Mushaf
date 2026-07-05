@@ -62,18 +62,23 @@ function ToolButton({
 }
 
 function Divider({ className = "" }: { className?: string }) {
-  return <span className={`mx-1 h-5 w-px shrink-0 bg-gold/25 ${className}`} aria-hidden />;
+  return (
+    <span
+      className={`mx-1 h-5 w-px shrink-0 bg-gold/25 lg:mx-0 lg:my-1 lg:h-px lg:w-5 ${className}`}
+      aria-hidden
+    />
+  );
 }
 
 /**
- * Floating bottom toolbar. Fades away while reading (idle) and returns on any
- * pointer/keyboard activity; keyboard focus always brings it back. `hidden`
- * (closed book) overrides everything, including hover.
+ * Floating reader toolbar. Desktop presents it as a right-side control rail;
+ * smaller screens keep a compact bottom bar so controls remain touch-friendly.
  */
 export default function ReaderToolbar({
   idle,
   hidden = false,
   caption,
+  captionLabel,
   onPrev,
   onNext,
   bookmarked,
@@ -92,6 +97,7 @@ export default function ReaderToolbar({
   idle: boolean;
   hidden?: boolean;
   caption: React.ReactNode;
+  captionLabel: string;
   onPrev: () => void;
   onNext: () => void;
   bookmarked: boolean;
@@ -109,19 +115,15 @@ export default function ReaderToolbar({
 }) {
   return (
     <div
-      className={`fixed inset-x-0 bottom-0 z-40 flex justify-center pb-4 transition-opacity duration-500 motion-reduce:transition-none ${
-        hidden
-          ? "pointer-events-none opacity-0"
-          : idle
-            ? "opacity-0 focus-within:opacity-100 hover:opacity-100"
-            : "opacity-100"
+      className={`reader-toolbar-shell ${
+        hidden ? "reader-toolbar-closed" : idle ? "reader-toolbar-idle" : "reader-toolbar-awake"
       }`}
     >
-      {/* soft canvas glow rising behind the bar */}
-      <div aria-hidden className="toolbar-glow pointer-events-none absolute inset-0" />
+      {/* soft canvas glow behind the controls */}
+      <div aria-hidden className="reader-toolbar-glow pointer-events-none absolute" />
 
       <div
-        className="relative flex max-w-[96vw] items-center gap-0.5 overflow-x-auto rounded-full border border-gold/30 bg-sheet/80 px-2 py-[5px] shadow-[0_10px_30px_-12px_rgba(40,30,14,.4),inset_0_1px_0_rgba(255,255,255,.5)] backdrop-blur-[10px] backdrop-saturate-[1.1]"
+        className="reader-toolbar-panel relative flex max-w-[96vw] items-center gap-0.5 overflow-x-auto rounded-full border border-gold/30 bg-sheet/80 px-2 py-[5px] shadow-[0_10px_30px_-12px_rgba(40,30,14,.4),inset_0_1px_0_rgba(255,255,255,.5)] backdrop-blur-[10px] backdrop-saturate-[1.1] lg:max-h-[min(78svh,640px)] lg:w-[52px] lg:flex-col lg:overflow-x-hidden lg:overflow-y-auto lg:px-[5px] lg:py-2"
         // Mouse clicks shouldn't leave focus pinned on a button (which would
         // hold the toolbar visible via focus-within); keyboard focus still does.
         onMouseDown={(e) => e.preventDefault()}
@@ -129,9 +131,12 @@ export default function ReaderToolbar({
         <button
           onClick={onOpenJump}
           title="الانتقال السريع (Ctrl+K)"
-          className="flex h-9 shrink cursor-pointer items-baseline justify-center gap-2 overflow-hidden whitespace-nowrap rounded-full px-3.5 text-ink-soft transition-colors hover:bg-accent/10 hover:text-accent sm:w-[220px]"
+          className="reader-toolbar-caption flex h-9 shrink cursor-pointer items-baseline justify-center gap-2 overflow-hidden whitespace-nowrap rounded-full px-3.5 text-ink-soft transition-colors hover:bg-accent/10 hover:text-accent sm:w-[220px] lg:h-auto lg:w-10 lg:flex-col lg:items-center lg:gap-1 lg:px-1.5 lg:py-2"
         >
           {caption}
+          <span className="reader-toolbar-caption-popover" dir="rtl">
+            {captionLabel}
+          </span>
         </button>
 
         <Link
@@ -145,13 +150,13 @@ export default function ReaderToolbar({
 
         <Divider />
 
-        {/* RTL book: advancing moves rightward — NEXT sits on the right */}
+        {/* Reader mapping: left arrow advances, right arrow returns. */}
         <ToolButton label="الصفحة التالية" onClick={onNext}>
-          <Icon d={paths.chevRight} />
+          <Icon d={paths.chevLeft} />
         </ToolButton>
 
         <ToolButton label="الصفحة السابقة" onClick={onPrev}>
-          <Icon d={paths.chevLeft} />
+          <Icon d={paths.chevRight} />
         </ToolButton>
 
         <Divider />
@@ -180,7 +185,7 @@ export default function ReaderToolbar({
 
         <Divider className="hidden sm:block" />
 
-        <div className="hidden items-center sm:flex">
+        <div className="hidden items-center sm:flex lg:flex-col">
           <ToolButton label="تصغير" onClick={onZoomOut} disabled={!canZoomOut}>
             <Icon d={paths.minus} />
           </ToolButton>
@@ -188,7 +193,7 @@ export default function ReaderToolbar({
             onClick={onResetZoom}
             title="ملاءمة الشاشة"
             aria-label="ملاءمة الشاشة"
-            className="h-9 w-[46px] shrink-0 cursor-pointer rounded-full text-xs text-ink-soft transition-colors hover:bg-accent/10 hover:text-accent"
+            className="h-9 w-[46px] shrink-0 cursor-pointer rounded-full text-xs text-ink-soft transition-colors hover:bg-accent/10 hover:text-accent lg:w-10"
           >
             {arNum(Math.round(zoom * 100))}٪
           </button>

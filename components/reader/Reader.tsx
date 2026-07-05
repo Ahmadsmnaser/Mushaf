@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { clampPage, getPageMeta, PAGE_COUNT } from "@/lib/mushaf/source";
 import { saveLastRead } from "@/lib/useLastRead";
 import { useBookmarks } from "@/lib/useBookmarks";
-import { useReaderTheme } from "@/lib/useReaderTheme";
+import { useReaderSettings } from "@/lib/readerSettings";
 import { useAutoHideToolbar } from "@/lib/useAutoHideToolbar";
 import { usePagePreload } from "@/lib/usePagePreload";
 import { useMushafState } from "@/lib/useMushafState";
@@ -22,8 +22,25 @@ const ZOOM_STEPS = [1, 1.25, 1.5, 2] as const;
 const DRAG_COMMIT = 0.3;
 const FLICK_PROGRESS = 0.08;
 const FLICK_MS = 220;
+const WHEEL_THRESHOLD = 55;
+const WHEEL_COOLDOWN_MS = 880;
 
 const arNum = (n: number) => n.toLocaleString("ar-EG");
+type GrabZone = "top" | "middle" | "bottom";
+type NavIntent = "next" | "previous";
+type FlipDir = "next" | "prev";
+
+const NAVIGATION: Record<
+  "arrowLeft" | "arrowRight" | "wheelDown" | "wheelUp" | "leftButton" | "rightButton",
+  NavIntent
+> = {
+  arrowLeft: "next",
+  arrowRight: "previous",
+  wheelDown: "next",
+  wheelUp: "previous",
+  leftButton: "next",
+  rightButton: "previous",
+};
 
 /** Checked at interaction time: reduced motion crossfades instead of flipping. */
 const prefersReducedMotion = () =>
@@ -46,8 +63,22 @@ function getNavigationDirection(
 /** Spreads pair (odd, even): (1,2) … (603,604). Right page = odd = lower. */
 const toSpreadStart = (n: number) => (n % 2 === 0 ? n - 1 : n);
 
+function getGrabZone(y: number, top: number, height: number): GrabZone {
+  const ratio = (y - top) / height;
+  if (ratio < 0.34) return "top";
+  if (ratio > 0.66) return "bottom";
+  return "middle";
+}
+
+function isTypingTarget(target: EventTarget | null): target is HTMLElement {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(target.tagName))
+  );
+}
+
 interface Flip {
-  dir: "next" | "prev";
+  dir: FlipDir;
   /** Position before the flip: spread start (double mode) or page (single mode). */
   from: number;
   to: number;
@@ -56,6 +87,7 @@ interface Flip {
   progress: number;
   /** Started from a button/key (true) or a drag (false) — picks the shading style. */
   auto: boolean;
+  grab: GrabZone;
 }
 
 export default function Reader({ initialPage }: { initialPage: number }) {
@@ -73,28 +105,48 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  const [theme, setTheme] = useReaderTheme();
-  const idle = useAutoHideToolbar(3000);
+  const [readerSettings, setReaderSettings] = useReaderSettings();
+  const { readerTheme, mushafStyle } = readerSettings;
+  const idle = useAutoHideToolbar(5000);
   const { bookmarks, isBookmarked, toggle, remove, setNote } = useBookmarks();
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ x0: number; lastX: number; t0: number; w: number } | null>(null);
+  const wheelUnlockRef = useRef<number | null>(null);
   const fadeRef = useRef(false); // reduced-motion crossfade in flight
   const pageRef = useRef(page);
-  pageRef.current = page;
   const flipRef = useRef(flip);
-  flipRef.current = flip;
   const mushafOpenRef = useRef(true);
-  mushafOpenRef.current = mushaf.isOpen;
   const mushafClosedRef = useRef(false);
-  mushafClosedRef.current = mushaf.isSettledClosed;
   const singleRef = useRef(single);
-  singleRef.current = single;
   const modalOpenRef = useRef(false);
-  modalOpenRef.current = jumpOpen || marksOpen;
   const panelOpenRef = useRef(false);
-  panelOpenRef.current = panelOpen;
+
+  useEffect(() => {
+    pageRef.current = page;
+  }, [page]);
+
+  useEffect(() => {
+    flipRef.current = flip;
+  }, [flip]);
+
+  useEffect(() => {
+    mushafOpenRef.current = mushaf.isOpen;
+    mushafClosedRef.current = mushaf.isSettledClosed;
+  }, [mushaf.isOpen, mushaf.isSettledClosed]);
+
+  useEffect(() => {
+    singleRef.current = single;
+  }, [single]);
+
+  useEffect(() => {
+    modalOpenRef.current = jumpOpen || marksOpen;
+  }, [jumpOpen, marksOpen]);
+
+  useEffect(() => {
+    panelOpenRef.current = panelOpen;
+  }, [panelOpen]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 899px)");
@@ -117,7 +169,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   }, []);
 
   /** Compute the flip target from the current position, or null at the bounds. */
-  const flipTarget = useCallback((dir: "next" | "prev") => {
+  const flipTarget = useCallback((dir: FlipDir) => {
     const isSingle = singleRef.current;
     const pos = isSingle ? pageRef.current : toSpreadStart(pageRef.current);
     const step = isSingle ? 1 : 2;
@@ -164,8 +216,25 @@ export default function Reader({ initialPage }: { initialPage: number }) {
     }, 200);
   }, []);
 
-  const navigate = useCallback(
-    (dir: "next" | "prev") => {
+  const beginFlip = useCallback(
+    (dir: FlipDir, phase: Flip["phase"], auto: boolean, grab: GrabZone) => {
+      const t = flipTarget(dir);
+      if (!t) {
+        closeBook(dir === "prev" ? "start" : "end");
+        return false;
+      }
+      if (auto && prefersReducedMotion()) {
+        crossFade(t.to);
+        return true;
+      }
+      setFlip({ dir, from: t.pos, to: t.to, phase, progress: 0, auto, grab });
+      return true;
+    },
+    [flipTarget, closeBook, crossFade]
+  );
+
+  const navigateByIntent = useCallback(
+    (intent: NavIntent) => {
       if (
         flipRef.current ||
         fadeRef.current ||
@@ -173,18 +242,16 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         !mushafOpenRef.current
       )
         return;
-      const t = flipTarget(dir);
-      if (!t) {
-        closeBook(dir === "prev" ? "start" : "end");
-        return;
-      }
-      if (prefersReducedMotion()) {
-        crossFade(t.to);
-        return;
-      }
-      setFlip({ dir, from: t.pos, to: t.to, phase: "animating", progress: 0, auto: true });
+      const dir: FlipDir = intent === "next" ? "next" : "prev";
+      beginFlip(dir, "animating", true, "middle");
     },
-    [flipTarget, closeBook, crossFade]
+    [beginFlip]
+  );
+
+  const navigateNext = useCallback(() => navigateByIntent("next"), [navigateByIntent]);
+  const navigatePrevious = useCallback(
+    () => navigateByIntent("previous"),
+    [navigateByIntent]
   );
 
   // Auto flips mount the leaf at progress 0, then ease it to 1 next frame so
@@ -233,23 +300,20 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         !mushafOpenRef.current
       )
         return;
-      const t = flipTarget(dir);
-      if (!t) {
-        closeBook(dir === "prev" ? "start" : "end");
-        return;
-      }
       const book = bookRef.current;
       if (!book) return;
+      const rect = book.getBoundingClientRect();
+      const grab = getGrabZone(e.clientY, rect.top, rect.height);
+      if (!beginFlip(dir, "drag", false, grab)) return;
       dragRef.current = {
         x0: e.clientX,
         lastX: e.clientX,
         t0: performance.now(),
-        w: book.getBoundingClientRect().width,
+        w: rect.width,
       };
       e.currentTarget.setPointerCapture(e.pointerId);
-      setFlip({ dir, from: t.pos, to: t.to, phase: "drag", progress: 0, auto: false });
     },
-    [flipTarget, closeBook]
+    [beginFlip]
   );
 
   const moveDrag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -334,10 +398,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         if (
           mushafClosedRef.current &&
           (e.key === "Enter" || e.key === " ") &&
-          !(
-            e.target instanceof HTMLElement &&
-            /^(BUTTON|A|INPUT)$/.test(e.target.tagName)
-          )
+          !isTypingTarget(e.target)
         ) {
           e.preventDefault();
           mushaf.open();
@@ -354,25 +415,53 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         setPanelOpen(false);
         return;
       }
-      if (
-        e.target instanceof HTMLElement &&
-        /^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(e.target.tagName)
-      )
+      if (isTypingTarget(e.target))
         return;
       if (modalOpenRef.current) return; // modals own their keys (incl. Escape)
-      if (e.key === "ArrowRight" || e.key === " ") {
+      if (e.key === "ArrowLeft" || e.key === " ") {
         e.preventDefault();
-        navigate("next");
-      } else if (e.key === "ArrowLeft") {
+        navigateByIntent(NAVIGATION.arrowLeft);
+      } else if (e.key === "ArrowRight") {
         e.preventDefault();
-        navigate("prev");
+        navigateByIntent(NAVIGATION.arrowRight);
       } else if (e.code === "KeyB" && !e.ctrlKey && !e.metaKey && !e.altKey) {
         toggleBookmark();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [navigate, toggleBookmark, mushaf.open]); // eslint-disable-line react-hooks/exhaustive-deps -- stable callback off the hook
+  }, [navigateByIntent, toggleBookmark, mushaf.open]); // eslint-disable-line react-hooks/exhaustive-deps -- stable callback off the hook
+
+  useEffect(() => {
+    const onWheel = (e: WheelEvent) => {
+      if (
+        zoom > 1.001 ||
+        flipRef.current ||
+        fadeRef.current ||
+        modalOpenRef.current ||
+        panelOpenRef.current ||
+        !mushafOpenRef.current ||
+        wheelUnlockRef.current !== null ||
+        Math.abs(e.deltaY) < WHEEL_THRESHOLD
+      )
+        return;
+
+      e.preventDefault();
+      navigateByIntent(e.deltaY > 0 ? NAVIGATION.wheelDown : NAVIGATION.wheelUp);
+      wheelUnlockRef.current = window.setTimeout(() => {
+        wheelUnlockRef.current = null;
+      }, WHEEL_COOLDOWN_MS);
+    };
+
+    window.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      window.removeEventListener("wheel", onWheel);
+      if (wheelUnlockRef.current !== null) {
+        window.clearTimeout(wheelUnlockRef.current);
+        wheelUnlockRef.current = null;
+      }
+    };
+  }, [navigateByIntent, zoom]);
 
   usePagePreload(toSpreadStart(page));
 
@@ -419,6 +508,32 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   const shade = flip ? Math.sin(Math.PI * flip.progress) * 0.55 : 0;
   const moveClass =
     flip?.phase === "drag" ? "leaf-dragging" : flip?.auto ? "leaf-move" : "leaf-release";
+  const grab = flip?.grab ?? "middle";
+  const grabY = grab === "top" ? "18%" : grab === "bottom" ? "82%" : "50%";
+  const curlBias = grab === "top" ? -1 : grab === "bottom" ? 1 : 0;
+  const curlDeg = flip ? Math.sin(Math.PI * flip.progress) * curlBias * 2.2 : 0;
+  const turnProgress = flip ? Math.sin(Math.PI * flip.progress).toFixed(3) : "0";
+
+  const pageTurnStyle = (
+    transform: string,
+    hinge: "left" | "right"
+  ): React.CSSProperties =>
+    ({
+      transform: `${transform} rotateZ(${curlDeg.toFixed(2)}deg)`,
+      transformOrigin: `${hinge} ${grabY}`,
+      "--turn-progress": turnProgress,
+      "--turn-shade": shade.toFixed(3),
+    }) as React.CSSProperties;
+
+  // The lift shadow wrapper: holds the drop-shadow `filter` OUTSIDE the 3D
+  // leaf (a filter on the leaf would flatten preserve-3d and expose the
+  // mirrored front face as its own backside). Vars are set here too so the
+  // filter can read the turn progress.
+  const liftClass = `leaf-lift ${moveClass === "leaf-move" ? "leaf-lift-move" : ""}`;
+  const liftVars = {
+    "--turn-progress": turnProgress,
+    "--turn-shade": shade.toFixed(3),
+  } as React.CSSProperties;
 
   // Single-page mode: a fold around the right edge (the spine side of an RTL
   // book) — the page turns rightward to advance, same progress model.
@@ -456,6 +571,8 @@ export default function Reader({ initialPage }: { initialPage: number }) {
     captionSurahs.length > 2
       ? `${captionSurahs.slice(0, 2).join("، ")}…`
       : captionSurahs.join("، ");
+  const pageLabel = single ? arNum(page) : `${arNum(s)}–${arNum(s + 1)}`;
+  const toolbarCaptionLabel = `سورة ${surahLabel}\nالجزء ${arNum(metaRight.juz)}\nصفحة ${pageLabel}`;
 
   const bookWidth = single
     ? `calc(min(94vw, 86svh * 0.6783) * ${zoom})`
@@ -467,7 +584,8 @@ export default function Reader({ initialPage }: { initialPage: number }) {
 
   return (
     <main
-      data-reader-theme={theme}
+      data-reader-theme={readerTheme}
+      data-mushaf-style={mushafStyle}
       className="reader-canvas relative h-svh w-full select-none overflow-hidden"
     >
       {/* Open-state rendering: unmounted entirely once the book settles
@@ -475,8 +593,20 @@ export default function Reader({ initialPage }: { initialPage: number }) {
       {!mushaf.isSettledClosed && (
         <>
       {/* RTL: advancing moves rightward — the right zone is NEXT */}
-      <NavZone side="right" label="الصفحة التالية" onClick={() => navigate("next")} />
-      <NavZone side="left" label="الصفحة السابقة" onClick={() => navigate("prev")} />
+      <NavZone
+        side="right"
+        label="الصفحة السابقة"
+        onClick={() => navigateByIntent(NAVIGATION.rightButton)}
+        idle={idle && !jumpOpen && !marksOpen && !panelOpen}
+        hidden={!mushaf.isOpen}
+      />
+      <NavZone
+        side="left"
+        label="الصفحة التالية"
+        onClick={() => navigateByIntent(NAVIGATION.leftButton)}
+        idle={idle && !jumpOpen && !marksOpen && !panelOpen}
+        hidden={!mushaf.isOpen}
+      />
 
       <div ref={scrollRef} className="h-full w-full overflow-auto">
         <div className="flex min-h-full min-w-full">
@@ -489,12 +619,19 @@ export default function Reader({ initialPage }: { initialPage: number }) {
                       <PageImage page={singleUnder} />
                     </div>
                   )}
-                  <div
-                    className={`absolute inset-0 origin-right ${moveClass}`}
-                    style={{ transform: `rotateY(${singleDeg}deg)` }}
-                    onTransitionEnd={onLeafTransitionEnd}
-                  >
-                    <PageImage page={singleTop} />
+                  <div className={`${liftClass} absolute inset-0`} style={liftVars}>
+                    <div
+                      className={`page-turn-leaf turn-grab-${grab} absolute inset-0 [transform-style:preserve-3d] ${moveClass}`}
+                      style={pageTurnStyle(`rotateY(${singleDeg}deg)`, "right")}
+                      onTransitionEnd={onLeafTransitionEnd}
+                    >
+                      <div className="leaf-face absolute inset-0 [backface-visibility:hidden]">
+                        <PageImage page={singleTop} />
+                      </div>
+                      <div className="leaf-face absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)]">
+                        <PaperBack />
+                      </div>
+                    </div>
                   </div>
                   {isBookmarked(page) && <Ribbon style={{ right: "9%" }} />}
                   {/* RTL: the next leaf is grabbed at the LEFT edge and pulled right */}
@@ -514,19 +651,27 @@ export default function Reader({ initialPage }: { initialPage: number }) {
                   <SpreadShading />
                   {leaf && flip && (
                     <div
-                      className={`absolute inset-y-0 z-30 w-1/2 [transform-style:preserve-3d] ${moveClass} ${
-                        leaf.side === "right" ? "left-1/2 origin-left" : "left-0 origin-right"
+                      className={`${liftClass} absolute inset-y-0 z-30 w-1/2 ${
+                        leaf.side === "right" ? "left-1/2" : "left-0"
                       }`}
-                      style={{ transform: `rotateY(${leafDeg}deg)` }}
-                      onTransitionEnd={onLeafTransitionEnd}
+                      style={liftVars}
                     >
-                      <div className="leaf-face absolute inset-0 [backface-visibility:hidden]">
-                        <PageImage page={leaf.front} />
-                        <LeafShade side={leaf.side} face="front" auto={flip.auto} shade={shade} />
-                      </div>
-                      <div className="leaf-face absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)]">
-                        <PageImage page={leaf.back} />
-                        <LeafShade side={leaf.side} face="back" auto={flip.auto} shade={shade} />
+                      <div
+                        className={`page-turn-leaf turn-grab-${grab} absolute inset-0 [transform-style:preserve-3d] ${moveClass}`}
+                        style={pageTurnStyle(`rotateY(${leafDeg}deg)`, leaf.side === "right" ? "left" : "right")}
+                        onTransitionEnd={onLeafTransitionEnd}
+                      >
+                        <div className="leaf-face absolute inset-0 [backface-visibility:hidden]">
+                          <PageImage page={leaf.front} />
+                          <LeafShade side={leaf.side} face="front" auto={flip.auto} shade={shade} />
+                        </div>
+                        {/* The physical backside of this sheet IS the incoming
+                            page. Its 180° face rotation cancels the leaf's turn,
+                            so the text reads normally — never mirrored. */}
+                        <div className="leaf-face absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)]">
+                          <PageImage page={leaf.back} />
+                          <LeafShade side={leaf.side} face="back" auto={flip.auto} shade={shade} />
+                        </div>
                       </div>
                     </div>
                   )}
@@ -563,25 +708,32 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         hidden={!mushaf.isOpen}
         caption={
           <>
-            <span className="min-w-0 truncate font-display text-[17px] leading-none text-ink">
+            <span className="min-w-0 truncate font-display text-[17px] leading-none text-ink lg:hidden">
               {surahLabel}
             </span>
-            <span className="hidden text-[9px] text-gold/80 sm:inline" aria-hidden>
+            <span className="hidden text-[9px] text-gold/80 sm:inline lg:hidden" aria-hidden>
               ◆
             </span>
-            <span className="hidden text-xs leading-none sm:inline">
+            <span className="hidden text-xs leading-none sm:inline lg:hidden">
               الجزء {arNum(metaRight.juz)}
             </span>
-            <span className="text-[9px] text-gold/80" aria-hidden>
+            <span className="text-[9px] text-gold/80 lg:hidden" aria-hidden>
               ◆
             </span>
-            <span className="text-xs leading-none">
-              {single ? arNum(page) : `${arNum(s)}–${arNum(s + 1)}`}
+            <span className="text-xs leading-none lg:hidden">
+              {pageLabel}
+            </span>
+            <span className="hidden font-display text-[15px] leading-none text-ink lg:block">
+              {single ? arNum(page) : arNum(s)}
+            </span>
+            <span className="hidden text-[10px] leading-none text-ink-soft lg:block">
+              ج {arNum(metaRight.juz)}
             </span>
           </>
         }
-        onPrev={() => navigate("prev")}
-        onNext={() => navigate("next")}
+        captionLabel={toolbarCaptionLabel}
+        onPrev={navigatePrevious}
+        onNext={navigateNext}
         bookmarked={isBookmarked(page)}
         onToggleBookmark={toggleBookmark}
         onOpenJump={() => setJumpOpen(true)}
@@ -608,8 +760,14 @@ export default function Reader({ initialPage }: { initialPage: number }) {
           setMarksOpen(true);
         }}
         bookmarkCount={bookmarks.length}
-        theme={theme}
-        onThemeChange={setTheme}
+        readerTheme={readerTheme}
+        onReaderThemeChange={(nextTheme) =>
+          setReaderSettings({ readerTheme: nextTheme })
+        }
+        mushafStyle={mushafStyle}
+        onMushafStyleChange={(nextStyle) =>
+          setReaderSettings({ mushafStyle: nextStyle })
+        }
         zoom={zoom}
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
@@ -655,6 +813,10 @@ function SpreadShading() {
       <div aria-hidden className="spine-hairline pointer-events-none absolute inset-y-[1%] left-1/2 z-20 w-px -translate-x-1/2" />
     </>
   );
+}
+
+function PaperBack() {
+  return <div aria-hidden className="leaf-paper-back absolute inset-0" />;
 }
 
 /** Spine-side shading on the moving leaf; peaks mid-turn. Auto flips animate
@@ -724,22 +886,28 @@ function NavZone({
   side,
   label,
   onClick,
+  idle,
+  hidden,
 }: {
   side: "left" | "right";
   label: string;
   onClick: () => void;
+  idle: boolean;
+  hidden: boolean;
 }) {
   return (
     <button
       aria-label={label}
       onClick={onClick}
-      className={`group absolute inset-y-0 z-10 w-[6%] min-w-9 cursor-pointer ${
-        side === "left" ? "left-0" : "right-0"
-      }`}
+      className={`reader-nav-zone group absolute inset-y-0 z-10 w-[6%] min-w-11 cursor-pointer ${
+        side === "left" ? "reader-nav-left left-0" : "reader-nav-right right-0"
+      } ${hidden ? "reader-nav-hidden" : idle ? "reader-nav-idle" : "reader-nav-awake"}`}
     >
       <span
         aria-hidden
-        className="flex h-full items-center justify-center text-[color:var(--canvas-fg)] opacity-0 transition-opacity duration-300 group-hover:opacity-75"
+        className={`reader-nav-affordance absolute top-1/2 flex h-14 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-gold/20 bg-sheet/20 text-[color:var(--canvas-fg)] shadow-[0_10px_30px_-18px_rgba(20,14,4,.45)] backdrop-blur-[6px] transition-all duration-300 ${
+          side === "left" ? "left-2" : "right-2"
+      }`}
       >
         <svg
           viewBox="0 0 24 24"
@@ -750,8 +918,7 @@ function NavZone({
           strokeLinejoin="round"
           className="h-[34px] w-[34px]"
         >
-          {/* per the design, the chevrons point inward, toward the spine */}
-          <path d={side === "left" ? "M9 6l6 6-6 6" : "M15 6l-6 6 6 6"} />
+          <path d={side === "left" ? "M15 6l-6 6 6 6" : "M9 6l6 6-6 6"} />
         </svg>
       </span>
     </button>

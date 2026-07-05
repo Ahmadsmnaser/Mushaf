@@ -30,7 +30,10 @@ export function useBookmarks() {
 
   // Load after mount (SSR-safe); state starts empty and hydrates.
   useEffect(() => {
-    setBookmarks(readJSON<Bookmark[]>(KEYS.bookmarks, [], isBookmarkList));
+    const timer = window.setTimeout(() => {
+      setBookmarks(readJSON<Bookmark[]>(KEYS.bookmarks, [], isBookmarkList));
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const update = useCallback((next: Bookmark[]) => {
