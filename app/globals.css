@@ -155,11 +155,22 @@ body {
  * transition so the page sticks to the finger/cursor).
  */
 .leaf-move {
-  transition: transform 460ms cubic-bezier(0.32, 0.08, 0.24, 1);
+  transition: transform 560ms cubic-bezier(0.34, 0.05, 0.2, 1);
+}
+
+/* Settling after a drag release: shorter, same curve. */
+.leaf-release {
+  transition: transform 420ms cubic-bezier(0.34, 0.05, 0.2, 1);
 }
 
 .leaf-dragging {
   transition: none;
+}
+
+/* Each face of the turning leaf is its own paper sheet. */
+.leaf-face {
+  background: #fffdf6;
+  box-shadow: 0 0 22px rgba(0, 0, 0, 0.18);
 }
 
 /* Shading pulse for auto flips (drag flips drive shading from progress). */
@@ -169,12 +180,12 @@ body {
     opacity: 0;
   }
   50% {
-    opacity: 0.9;
+    opacity: 0.55;
   }
 }
 
 .leaf-shade-anim {
-  animation: leaf-shade 460ms ease forwards;
+  animation: leaf-shade 560ms ease forwards;
 }
 
 /* Draggable page edges: a faint folded-corner affordance that strengthens on
@@ -216,36 +227,44 @@ body {
 }
 
 /*
- * The physical book, layered instead of bordered: the leather cover board is
- * an absolutely positioned layer BEHIND the pages, peeking out a few
- * millimetres the way real boards do (a touch more at the bottom, where the
- * book meets the surface), carrying its own sheen, bevel and the on-surface
- * drop shadow. Same leather as the landing page; themes may darken it.
+ * The open mushaf's paper surface. Deliberately quiet: the sheet itself on a
+ * fixed paper white (the KSU page PNGs are transparent — this IS the paper),
+ * a single gold hairline as the only frame, ambient shadows lifting it off
+ * the desk, and an elliptical contact shadow beneath. Nothing competes with
+ * the page.
  */
-.book-cover-layer {
-  position: absolute;
-  inset: -8px -11px -14px -11px;
-  border-radius: 10px;
-  background: linear-gradient(
-    155deg,
-    color-mix(in srgb, var(--cover) 82%, #6a8f72) 0%,
-    var(--cover) 42%,
-    color-mix(in srgb, var(--cover) 72%, black) 100%
-  );
+.paper-sheet {
+  background: #fffdf6;
+  border-radius: 3px;
   box-shadow:
-    0 44px 80px -30px rgba(40, 30, 12, 0.55),
-    0 14px 30px -14px rgba(40, 30, 12, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.35),
-    inset 0 0 0 1px color-mix(in srgb, var(--gold-soft) 28%, transparent);
+    0 0 0 1px color-mix(in srgb, var(--gold) 34%, transparent),
+    0 2px 6px -2px rgba(52, 42, 22, 0.3),
+    0 18px 44px -18px rgba(52, 42, 22, 0.42),
+    0 48px 100px -44px rgba(52, 42, 22, 0.38);
+}
+
+/* Where the book meets the surface: a soft ellipse, no hard edges. */
+.desk-shadow {
+  position: absolute;
+  left: 2%;
+  right: 2%;
+  bottom: -4%;
+  height: 10%;
+  z-index: -1;
+  background: radial-gradient(
+    ellipse 50% 50% at 50% 50%,
+    rgba(40, 30, 14, 0.32),
+    transparent 70%
+  );
+  pointer-events: none;
 }
 
 /* Faint paper depth on the open pages: darkened outer edges and a whisper of
    top/bottom bow — gradients only, never touching the page pixels. */
 .page-depth {
   background:
-    linear-gradient(to right, rgba(58, 44, 20, 0.07), transparent 2.5%),
-    linear-gradient(to left, rgba(58, 44, 20, 0.07), transparent 2.5%),
+    linear-gradient(to right, rgba(58, 44, 20, 0.06), transparent 2.5%),
+    linear-gradient(to left, rgba(58, 44, 20, 0.06), transparent 2.5%),
     linear-gradient(
       to bottom,
       rgba(58, 44, 20, 0.05),
@@ -255,26 +274,49 @@ body {
     );
 }
 
-/* Layered spine gutter: a firmer shadow core where the pages dive into the
-   binding, flanked by the pale bow of the curling paper. */
+/*
+ * Spread shading, layered per the design: dark outer edges, a broad falloff
+ * where each page dives toward the binding, and a pale highlight where the
+ * paper bows back up — then the firm spine band with a white hairline seam.
+ */
+.spread-edge-right {
+  background: linear-gradient(to left, rgba(40, 30, 14, 0.13), transparent);
+}
+.spread-edge-left {
+  background: linear-gradient(to right, rgba(40, 30, 14, 0.13), transparent);
+}
+.spread-spine-left {
+  background: linear-gradient(to right, rgba(28, 20, 8, 0.22), rgba(28, 20, 8, 0.05) 46%, transparent);
+}
+.spread-spine-right {
+  background: linear-gradient(to left, rgba(28, 20, 8, 0.22), rgba(28, 20, 8, 0.05) 46%, transparent);
+}
+.spread-bow-left {
+  background: linear-gradient(to right, rgba(255, 255, 250, 0.1), transparent);
+}
+.spread-bow-right {
+  background: linear-gradient(to left, rgba(255, 255, 250, 0.1), transparent);
+}
+
 .book-spine {
-  background:
-    linear-gradient(
-      to right,
-      transparent,
-      rgba(0, 0, 0, 0.16) 36%,
-      rgba(0, 0, 0, 0.38) 50%,
-      rgba(0, 0, 0, 0.16) 64%,
-      transparent
-    ),
-    linear-gradient(
-      to right,
-      transparent 24%,
-      rgba(255, 255, 255, 0.16) 42%,
-      transparent 50%,
-      rgba(255, 255, 255, 0.16) 58%,
-      transparent 76%
-    );
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(0, 0, 0, 0.1) 28%,
+    rgba(0, 0, 0, 0.36) 50%,
+    rgba(0, 0, 0, 0.1) 72%,
+    transparent
+  );
+}
+
+.spine-hairline {
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(255, 255, 255, 0.14) 12%,
+    rgba(255, 255, 255, 0.14) 88%,
+    transparent
+  );
 }
 
 /*
@@ -282,10 +324,19 @@ body {
  * page keeps its own cover styling. The Quran page images are never filtered —
  * themes only touch the canvas and chrome surfaces around them.
  */
+/*
+ * The reading surface: a calm desk under soft light — a glow falling from
+ * above, gentle floor shading toward the bottom, and a whisper of material
+ * grain so the canvas reads as a surface rather than a flat fill.
+ */
 .reader-canvas {
   background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.035 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse 130% 100% at 50% 108%, rgba(40, 30, 14, 0.13), transparent 62%),
     radial-gradient(ellipse 90% 70% at 50% 38%, var(--canvas-glow), transparent 75%),
     var(--canvas);
+  background-repeat: repeat, no-repeat, no-repeat, no-repeat;
+  background-size: 160px 160px, auto, auto, auto;
 }
 
 [data-reader-theme] {
@@ -309,9 +360,6 @@ body {
   --canvas: #16243c;
   --canvas-glow: rgba(56, 82, 128, 0.3);
   --canvas-fg: #c0bda9;
-}
-
-[data-reader-theme="navy"] .book-cover-layer {
   --cover: #122036;
 }
 
@@ -324,16 +372,142 @@ body {
   --ink: #e8e2d4;
   --ink-soft: #a59d8a;
   --accent: #6aa885;
+  --cover: #0b2018;
+  --gold: #8a744a;
+  --gold-soft: #9a8557;
 }
 
-[data-reader-theme="night"] .book-cover-layer {
-  --cover: #0b2018;
+/* Soft canvas glow rising behind the toolbar. */
+.toolbar-glow {
+  background: linear-gradient(to top, var(--canvas-glow), transparent 78%);
+  opacity: 0.7;
+}
+
+/*
+ * Closed-book state machine visuals. The cover component mounts fresh for
+ * each close/open cycle, so entering states never inherit stale transitions:
+ * keyframe animations (fill: both) carry each phase's journey, and the
+ * element's own styles hold that phase's END state.
+ *
+ *   closing — canvas fades in fast (260ms) while the door swings shut (620ms)
+ *   opening — door swings open (560ms), THEN the canvas fades out (300ms,
+ *             delayed 480ms) to reveal the spread waiting behind it
+ */
+.cover-overlay {
+  background:
+    radial-gradient(ellipse 90% 70% at 50% 40%, var(--canvas-glow), transparent 75%),
+    var(--canvas);
+}
+
+@keyframes cover-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes cover-fade-out {
+  from {
+    opacity: 1;
+  }
+}
+
+.cover-overlay-enter {
+  animation: cover-fade-in 260ms ease both;
+}
+
+.cover-overlay-leave {
+  animation: cover-fade-out 300ms ease 480ms both;
+}
+
+/* The door hinges at the spine; --door-deg is set per side (∓108°). */
+.cover-door-shell {
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+@keyframes door-shut {
+  from {
+    transform: rotateY(var(--door-deg));
+  }
+}
+
+@keyframes door-open {
+  from {
+    transform: rotateY(0deg);
+  }
+}
+
+.door-swing-shut {
+  animation: door-shut 620ms cubic-bezier(0.2, 0.5, 0.2, 1) both;
+}
+
+.door-swing-open {
+  animation: door-open 560ms cubic-bezier(0.2, 0.5, 0.2, 1) both;
+}
+
+/* Front face: the tooled leather with the title. */
+.cover-door {
+  background:
+    radial-gradient(130% 90% at 30% -5%, rgba(255, 255, 255, 0.14), transparent 55%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cg fill='none' stroke='%23c8b482' stroke-opacity='0.09'%3E%3Crect x='36' y='36' width='48' height='48'/%3E%3Crect x='36' y='36' width='48' height='48' transform='rotate(45 60 60)'/%3E%3Ccircle cx='60' cy='60' r='3.5'/%3E%3C/g%3E%3C/svg%3E"),
+    linear-gradient(
+      158deg,
+      color-mix(in srgb, var(--cover) 74%, #83a98c) 0%,
+      var(--cover) 42%,
+      color-mix(in srgb, var(--cover) 60%, black) 100%
+    );
+  background-repeat: no-repeat, repeat, no-repeat;
+  background-size: cover, 120px 120px, cover;
+  box-shadow:
+    0 54px 96px -30px rgba(20, 14, 4, 0.62),
+    inset 0 2px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -4px 8px rgba(0, 0, 0, 0.42),
+    inset 0 0 0 1px color-mix(in srgb, var(--gold-soft) 34%, transparent);
+}
+
+/* Back face: plain leather, visible mid-swing so the cover never vanishes. */
+.cover-door-back {
+  background: linear-gradient(
+    202deg,
+    color-mix(in srgb, var(--cover) 82%, black) 0%,
+    color-mix(in srgb, var(--cover) 58%, black) 100%
+  );
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold-soft) 16%, transparent);
+}
+
+/* The bare flyleaf under the cover — paper only, never Quran content. */
+.closed-paper {
+  background:
+    linear-gradient(to left, rgba(58, 44, 20, 0.05), transparent 6%),
+    linear-gradient(to right, rgba(58, 44, 20, 0.05), transparent 6%),
+    var(--sheet);
+  border-radius: 3px;
+  box-shadow:
+    inset 0 0 24px rgba(52, 42, 22, 0.1),
+    0 18px 44px -18px rgba(24, 17, 5, 0.45);
+}
+
+.cover-door-ring {
+  position: absolute;
+  inset: 16px;
+  border: 1px solid color-mix(in srgb, var(--gold-soft) 42%, transparent);
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 4px color-mix(in srgb, var(--gold-soft) 12%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {
   /* 1ms (not none) so transitionend still fires and the flip commits. */
-  .leaf-move {
+  .leaf-move,
+  .leaf-release {
     transition-duration: 1ms;
+  }
+  /* The state machine settles instantly under reduced motion (the hook
+     skips transitional phases); kill the choreography too. */
+  .cover-overlay-enter,
+  .cover-overlay-leave,
+  .door-swing-shut,
+  .door-swing-open {
+    animation: none;
   }
   .book-enter {
     animation: none;

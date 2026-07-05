@@ -13,8 +13,9 @@ import Modal from "./Modal";
 const arNum = (n: number) => n.toLocaleString("ar-EG");
 
 /**
- * Command-style jump: type a page number, or part of a surah name to filter,
- * or pick a juz. Enter goes to the page number / first surah match.
+ * Command-style jump with السور / الأجزاء tabs: type a page number, or part
+ * of a surah name to filter, or pick a juz from the grid. Enter goes to the
+ * page number / first surah match.
  */
 export default function QuickJumpModal({
   open,
@@ -26,6 +27,7 @@ export default function QuickJumpModal({
   onSelect: (page: number) => void;
 }) {
   const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<"surah" | "juz">("surah");
   const surahs = useMemo(() => getSurahIndex(), []);
   const juzs = useMemo(() => getJuzIndex(), []);
 
@@ -50,9 +52,16 @@ export default function QuickJumpModal({
     else if (filtered.length > 0) go(filtered[0].first_page);
   };
 
+  const tabClass = (active: boolean) =>
+    `flex-1 cursor-pointer rounded-full border-0 py-[7px] text-[13px] transition-colors ${
+      active
+        ? "bg-sheet text-accent shadow-[0_1px_3px_rgba(40,30,14,.18)]"
+        : "bg-transparent text-ink-soft"
+    }`;
+
   return (
-    <Modal open={open} onClose={onClose} title="الانتقال السريع">
-      <div className="border-b border-gold/20 px-5 py-3">
+    <Modal open={open} onClose={onClose} title="الانتقال السريع" maxWidth="max-w-[460px]">
+      <div className="border-b border-gold/20 px-[18px] pb-3.5 pt-3">
         <input
           data-autofocus
           type="text"
@@ -62,50 +71,80 @@ export default function QuickJumpModal({
           onKeyDown={(e) => {
             if (e.key === "Enter") submit();
           }}
-          placeholder={`رقم صفحة (١–${arNum(PAGE_COUNT)}) أو اسم سورة…`}
-          className="w-full rounded-md border border-gold/25 bg-sheet px-3 py-2 text-sm text-ink placeholder:text-ink-soft/70"
+          placeholder={`اسم سورة أو رقم صفحة (١–${arNum(PAGE_COUNT)})…`}
+          className="w-full rounded-[9px] border border-gold/30 bg-sheet px-3 py-[9px] text-sm text-ink placeholder:text-ink-soft/70"
         />
+        <div
+          role="tablist"
+          className="mt-3 flex gap-1 rounded-full bg-ink/5 p-[3px]"
+        >
+          <button
+            role="tab"
+            aria-selected={tab === "surah"}
+            onClick={() => setTab("surah")}
+            className={tabClass(tab === "surah")}
+          >
+            السور
+          </button>
+          <button
+            role="tab"
+            aria-selected={tab === "juz"}
+            onClick={() => setTab("juz")}
+            className={tabClass(tab === "juz")}
+          >
+            الأجزاء
+          </button>
+        </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
-        <h3 className="mb-1 text-xs text-ink-soft">السور</h3>
-        <ul className="mb-4">
-          {filtered.map((s) => (
-            <li key={s.id}>
-              <button
-                onClick={() => go(s.first_page)}
-                className="flex w-full cursor-pointer items-baseline justify-between rounded-md px-2 py-1.5 text-start transition-colors hover:bg-accent/10"
-              >
-                <span>
-                  <span className="ms-2 inline-block w-7 text-xs text-ink-soft">
-                    {arNum(s.id)}
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3.5 pt-2">
+        {tab === "surah" ? (
+          <ul>
+            {filtered.map((s) => (
+              <li key={s.id}>
+                <button
+                  onClick={() => go(s.first_page)}
+                  className="flex w-full cursor-pointer items-center justify-between gap-2.5 rounded-[9px] px-2.5 py-[9px] text-start transition-colors hover:bg-accent/10"
+                >
+                  <span className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] border border-gold/30 text-[11px] text-ink-soft">
+                      {arNum(s.id)}
+                    </span>
+                    <span className="truncate font-display text-[19px] leading-tight text-ink">
+                      {s.name_ar}
+                    </span>
                   </span>
-                  <span className="font-display text-base">{s.name_ar}</span>
+                  <span className="shrink-0 text-[11px] text-ink-soft">
+                    صفحة {arNum(s.first_page)}
+                  </span>
+                </button>
+              </li>
+            ))}
+            {filtered.length === 0 && (
+              <li className="px-2.5 py-3.5 text-center text-[13px] text-ink-soft">
+                لا سورة بهذا الاسم — جرّب جزءًا من الاسم، أو اكتب رقم صفحة.
+              </li>
+            )}
+          </ul>
+        ) : (
+          <div className="grid grid-cols-5 gap-[7px] p-1">
+            {juzs.map((j) => (
+              <button
+                key={j.number}
+                onClick={() => go(j.first_page)}
+                aria-label={`الجزء ${arNum(j.number)}`}
+                className="flex cursor-pointer flex-col items-center gap-0.5 rounded-[9px] border border-gold/25 px-0.5 py-[9px] transition-colors hover:border-accent/55 hover:bg-accent/10"
+              >
+                <span className="font-display text-lg leading-none text-accent">
+                  {arNum(j.number)}
                 </span>
-                <span className="text-xs text-ink-soft">صفحة {arNum(s.first_page)}</span>
+                <span className="text-[9px] text-ink-soft">
+                  صفحة {arNum(j.first_page)}
+                </span>
               </button>
-            </li>
-          ))}
-          {filtered.length === 0 && (
-            <li className="px-2 py-3 text-sm text-ink-soft">
-              لا سورة بهذا الاسم — جرّب كتابة جزء من الاسم دون «سورة».
-            </li>
-          )}
-        </ul>
-
-        <h3 className="mb-2 text-xs text-ink-soft">الأجزاء</h3>
-        <div className="grid grid-cols-6 gap-1.5 pb-2 sm:grid-cols-10">
-          {juzs.map((j) => (
-            <button
-              key={j.number}
-              onClick={() => go(j.first_page)}
-              aria-label={`الجزء ${arNum(j.number)}`}
-              className="cursor-pointer rounded-md border border-gold/25 py-1 text-sm text-ink transition-colors hover:border-accent hover:bg-accent/10"
-            >
-              {arNum(j.number)}
-            </button>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </Modal>
   );

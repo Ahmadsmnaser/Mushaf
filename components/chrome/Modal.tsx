@@ -10,11 +10,13 @@ export default function Modal({
   open,
   onClose,
   title,
+  maxWidth = "max-w-lg",
   children,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
+  maxWidth?: string;
   children: React.ReactNode;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
@@ -49,7 +51,7 @@ export default function Modal({
       <div
         ref={cardRef}
         tabIndex={-1}
-        className="modal-card relative flex max-h-[85svh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-gold/30 bg-paper shadow-2xl outline-none"
+        className={`modal-card relative flex max-h-[85svh] w-full ${maxWidth} flex-col overflow-hidden rounded-[14px] border border-gold/30 bg-paper shadow-[0_30px_60px_-20px_rgba(40,30,14,.5)] outline-none`}
       >
         <div className="flex items-center justify-between border-b border-gold/20 px-5 py-3">
           <h2 className="font-display text-xl text-accent">{title}</h2>

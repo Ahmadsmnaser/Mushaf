@@ -17,21 +17,22 @@ function Row({
   return (
     <button
       onClick={onClick}
-      className="flex w-full cursor-pointer items-baseline justify-between rounded-md px-2 py-2 text-start transition-colors hover:bg-accent/10"
+      className="flex w-full cursor-pointer items-baseline justify-between rounded-lg px-2 py-2 text-start transition-colors hover:bg-accent/10"
     >
       <span className="text-sm text-ink">{label}</span>
-      {sub && <span className="text-xs text-ink-soft">{sub}</span>}
+      {sub && <span className="text-[11px] text-ink-soft">{sub}</span>}
     </button>
   );
 }
 
 /**
- * Collapsed-by-default side panel, opened by a small vertical tab on the left
- * edge. Sections: index, bookmarks, theme, reading settings.
+ * Reading panel: a left drawer opened from the toolbar. Sections: index,
+ * bookmarks, theme, reading settings. Kept mounted (translated off-canvas)
+ * so the slide animates both ways; the backdrop fades with it.
  */
 export default function ReaderSidePanel({
   open,
-  onToggle,
+  onClose,
   onOpenIndex,
   onOpenBookmarks,
   bookmarkCount,
@@ -45,7 +46,7 @@ export default function ReaderSidePanel({
   onToggleFullscreen,
 }: {
   open: boolean;
-  onToggle: (open: boolean) => void;
+  onClose: () => void;
   onOpenIndex: () => void;
   onOpenBookmarks: () => void;
   bookmarkCount: number;
@@ -60,57 +61,54 @@ export default function ReaderSidePanel({
 }) {
   return (
     <>
-      {/* vertical tab, always visible */}
-      <button
-        onClick={() => onToggle(!open)}
-        aria-expanded={open}
-        aria-label={open ? "أغلق اللوحة الجانبية" : "افتح اللوحة الجانبية"}
-        title={open ? "أغلق اللوحة الجانبية" : "اللوحة الجانبية"}
-        className={`fixed top-1/2 z-50 flex h-20 w-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-e-lg border border-s-0 border-gold/30 bg-sheet/90 text-ink-soft shadow-md backdrop-blur-sm transition-all duration-300 motion-reduce:transition-none hover:text-accent max-sm:hidden ${
-          open ? "left-[280px]" : "left-0"
-        }`}
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={1.5}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className={`h-4 w-4 transition-transform motion-reduce:transition-none ${open ? "" : "rotate-180"}`}
-          aria-hidden
-        >
-          <path d="M15 6l-6 6 6 6" />
-        </svg>
-      </button>
-
       {/* backdrop (click to close) */}
-      {open && (
-        <div
-          className="fixed inset-0 z-40 bg-ink/20"
-          onClick={() => onToggle(false)}
-          aria-hidden
-        />
-      )}
+      <div
+        className={`fixed inset-0 z-[44] bg-ink/15 backdrop-blur-[1px] transition-[opacity,visibility] duration-300 motion-reduce:transition-none ${
+          open ? "visible opacity-100" : "invisible opacity-0"
+        }`}
+        onClick={onClose}
+        aria-hidden
+      />
 
       <aside
         aria-label="لوحة القراءة"
         aria-hidden={!open}
         // Overlays the reader (never squeezes the book). Desktop: 280px side
         // drawer on a translucent parchment surface; mobile: bottom sheet.
-        className={`fixed z-50 flex flex-col gap-5 overflow-y-auto bg-paper/85 p-5 shadow-2xl backdrop-blur-md transition-transform duration-300 motion-reduce:transition-none max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[75svh] max-sm:rounded-t-2xl max-sm:border-t max-sm:border-gold/25 sm:inset-y-0 sm:left-0 sm:w-[280px] sm:border-e sm:border-gold/25 ${
+        className={`fixed z-[45] flex flex-col gap-[22px] overflow-y-auto bg-paper/85 px-5 py-[22px] backdrop-blur-2xl backdrop-saturate-105 transition-transform duration-[340ms] ease-[cubic-bezier(.3,.6,.2,1)] motion-reduce:transition-none max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[75svh] max-sm:rounded-t-2xl max-sm:border-t max-sm:border-gold/25 sm:inset-y-0 sm:left-0 sm:w-[280px] sm:max-w-[82vw] sm:border-e sm:border-gold/20 sm:shadow-[24px_0_60px_-30px_rgba(40,30,14,.5)] ${
           open
             ? "translate-x-0 translate-y-0"
-            : "max-sm:translate-y-full sm:-translate-x-full"
+            : "max-sm:translate-y-full sm:-translate-x-[101%]"
         }`}
       >
+        <div className="flex items-center justify-between">
+          <h2 className="font-display text-[22px] text-accent">لوحة القراءة</h2>
+          <button
+            onClick={onClose}
+            aria-label="إغلاق"
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-ink-soft transition-colors hover:bg-ink/10"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.5}
+              strokeLinecap="round"
+              className="h-4 w-4"
+              aria-hidden
+            >
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+
         <section>
-          <h3 className="mb-1 font-display text-lg text-accent">الفهرس</h3>
+          <h3 className="mb-1.5 font-display text-[17px] text-accent">الفهرس</h3>
           <Row label="تصفّح السور والأجزاء" sub="Ctrl+K" onClick={onOpenIndex} />
         </section>
 
         <section>
-          <h3 className="mb-1 font-display text-lg text-accent">العلامات</h3>
+          <h3 className="mb-1.5 font-display text-[17px] text-accent">العلامات</h3>
           <Row
             label="عرض العلامات"
             sub={bookmarkCount > 0 ? `${arNum(bookmarkCount)} محفوظة` : "لا شيء بعد"}
@@ -119,18 +117,18 @@ export default function ReaderSidePanel({
         </section>
 
         <section>
-          <h3 className="mb-2 font-display text-lg text-accent">الثيم</h3>
+          <h3 className="mb-2 font-display text-[17px] text-accent">الثيم</h3>
           <ThemeSwitcher theme={theme} onChange={onThemeChange} />
-          <p className="mt-2 text-[11px] leading-5 text-ink-soft">
+          <p className="mt-2 text-[11px] leading-relaxed text-ink-soft">
             يتغيّر محيط القراءة فقط — صفحة المصحف تبقى كما هي.
           </p>
         </section>
 
         <section>
-          <h3 className="mb-2 font-display text-lg text-accent">إعدادات القراءة</h3>
-          <div className="flex items-center justify-between rounded-md px-2 py-1.5">
+          <h3 className="mb-2 font-display text-[17px] text-accent">إعدادات القراءة</h3>
+          <div className="flex items-center justify-between px-2 py-1.5">
             <span className="text-sm text-ink">التكبير</span>
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1.5">
               <button
                 onClick={onZoomOut}
                 aria-label="تصغير"

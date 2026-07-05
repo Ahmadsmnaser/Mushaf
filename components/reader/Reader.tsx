@@ -7,23 +7,25 @@ import { useBookmarks } from "@/lib/useBookmarks";
 import { useReaderTheme } from "@/lib/useReaderTheme";
 import { useAutoHideToolbar } from "@/lib/useAutoHideToolbar";
 import { usePagePreload } from "@/lib/usePagePreload";
+import { useMushafState } from "@/lib/useMushafState";
 import ReaderToolbar from "@/components/chrome/ReaderToolbar";
 import QuickJumpModal from "@/components/chrome/QuickJumpModal";
 import BookmarksPanel from "@/components/chrome/BookmarksPanel";
 import ReaderSidePanel from "@/components/chrome/ReaderSidePanel";
 import BookFrame from "./BookFrame";
+import ClosedMushafCover from "./ClosedMushafCover";
 import PageImage from "./PageImage";
 
-const FLIP_MS = 460;
-const ZOOM_STEPS = [1, 1.25, 1.5, 2, 2.5, 3] as const;
+const FLIP_MS = 560;
+const ZOOM_STEPS = [1, 1.25, 1.5, 2] as const;
 // Drag-to-flip: commit past 30% travel, or a quick decisive flick.
 const DRAG_COMMIT = 0.3;
 const FLICK_PROGRESS = 0.08;
-const FLICK_MS = 200;
+const FLICK_MS = 220;
 
 const arNum = (n: number) => n.toLocaleString("ar-EG");
 
-/** Checked at interaction time: reduced motion skips the leaf and jumps. */
+/** Checked at interaction time: reduced motion crossfades instead of flipping. */
 const prefersReducedMotion = () =>
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -59,6 +61,9 @@ interface Flip {
 export default function Reader({ initialPage }: { initialPage: number }) {
   const [page, setPage] = useState(() => clampPage(initialPage));
   const [flip, setFlip] = useState<Flip | null>(null);
+  // Visual book state (open / closing / closed / opening), fully separate
+  // from page navigation state — closing never changes the page number.
+  const mushaf = useMushafState();
   // Two-page spread on desktop, single page on narrow viewports. SSR renders
   // the desktop spread; the media query corrects after mount if needed.
   const [single, setSingle] = useState(false);
@@ -75,10 +80,15 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ x0: number; lastX: number; t0: number; w: number } | null>(null);
+  const fadeRef = useRef(false); // reduced-motion crossfade in flight
   const pageRef = useRef(page);
   pageRef.current = page;
   const flipRef = useRef(flip);
   flipRef.current = flip;
+  const mushafOpenRef = useRef(true);
+  mushafOpenRef.current = mushaf.isOpen;
+  const mushafClosedRef = useRef(false);
+  mushafClosedRef.current = mushaf.isSettledClosed;
   const singleRef = useRef(single);
   singleRef.current = single;
   const modalOpenRef = useRef(false);
@@ -116,18 +126,65 @@ export default function Reader({ initialPage }: { initialPage: number }) {
     return to === pos ? null : { pos, to };
   }, []);
 
+  // ------------------------------------------------------------------
+  // Closed-book state. Turning past either end swings the leather cover
+  // shut over the spread; the cover itself (or the button under it)
+  // swings it open again onto the same spread. The machine lives in
+  // useMushafState — here we only close chrome and forward the side.
+  // ------------------------------------------------------------------
+  const closeBook = useCallback(
+    (side: "start" | "end") => {
+      setPanelOpen(false);
+      setJumpOpen(false);
+      setMarksOpen(false);
+      mushaf.close(side);
+    },
+    [mushaf.close] // eslint-disable-line react-hooks/exhaustive-deps -- stable callback off the hook
+  );
+
+  /** Reduced-motion page turn: a calm crossfade instead of the 3D leaf. */
+  const crossFade = useCallback((to: number) => {
+    const book = bookRef.current;
+    if (!book) {
+      setPage(to);
+      return;
+    }
+    fadeRef.current = true;
+    book.style.transition = "opacity 190ms ease";
+    book.style.opacity = "0";
+    window.setTimeout(() => {
+      setPage(to);
+      requestAnimationFrame(() => {
+        book.style.opacity = "1";
+      });
+      window.setTimeout(() => {
+        book.style.transition = "";
+        fadeRef.current = false;
+      }, 220);
+    }, 200);
+  }, []);
+
   const navigate = useCallback(
     (dir: "next" | "prev") => {
-      if (flipRef.current || modalOpenRef.current) return;
+      if (
+        flipRef.current ||
+        fadeRef.current ||
+        modalOpenRef.current ||
+        !mushafOpenRef.current
+      )
+        return;
       const t = flipTarget(dir);
-      if (!t) return;
+      if (!t) {
+        closeBook(dir === "prev" ? "start" : "end");
+        return;
+      }
       if (prefersReducedMotion()) {
-        setPage(t.to);
+        crossFade(t.to);
         return;
       }
       setFlip({ dir, from: t.pos, to: t.to, phase: "animating", progress: 0, auto: true });
     },
-    [flipTarget]
+    [flipTarget, closeBook, crossFade]
   );
 
   // Auto flips mount the leaf at progress 0, then ease it to 1 next frame so
@@ -162,16 +219,27 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   }, [flip, resolveFlip]);
 
   // ------------------------------------------------------------------
-  // Drag-to-flip. Grabbing the right edge (the unread block) and pulling
-  // left advances — the same physical motion as the auto flip; the left
+  // Drag-to-flip. Grabbing the left edge (the unread block) and pulling
+  // right advances — the same physical motion as the auto flip; the right
   // edge mirrors it for going back. Pointer events cover mouse and touch.
   // ------------------------------------------------------------------
   const startDrag = useCallback(
     (dir: "next" | "prev") => (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!e.isPrimary || flipRef.current || modalOpenRef.current) return;
+      if (
+        !e.isPrimary ||
+        flipRef.current ||
+        fadeRef.current ||
+        modalOpenRef.current ||
+        !mushafOpenRef.current
+      )
+        return;
       const t = flipTarget(dir);
+      if (!t) {
+        closeBook(dir === "prev" ? "start" : "end");
+        return;
+      }
       const book = bookRef.current;
-      if (!t || !book) return;
+      if (!book) return;
       dragRef.current = {
         x0: e.clientX,
         lastX: e.clientX,
@@ -181,7 +249,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
       e.currentTarget.setPointerCapture(e.pointerId);
       setFlip({ dir, from: t.pos, to: t.to, phase: "drag", progress: 0, auto: false });
     },
-    [flipTarget]
+    [flipTarget, closeBook]
   );
 
   const moveDrag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -259,6 +327,23 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   // B = bookmark (e.code so it works on Arabic keyboard layouts).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Closed or mid-swing: the whole reader is inert except the reopen
+      // affordance (Enter/Space from a settled closed cover; the cover and
+      // pill buttons handle their own native activation).
+      if (!mushafOpenRef.current) {
+        if (
+          mushafClosedRef.current &&
+          (e.key === "Enter" || e.key === " ") &&
+          !(
+            e.target instanceof HTMLElement &&
+            /^(BUTTON|A|INPUT)$/.test(e.target.tagName)
+          )
+        ) {
+          e.preventDefault();
+          mushaf.open();
+        }
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && e.code === "KeyK") {
         e.preventDefault();
         setMarksOpen(false);
@@ -287,7 +372,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [navigate, toggleBookmark]);
+  }, [navigate, toggleBookmark, mushaf.open]); // eslint-disable-line react-hooks/exhaustive-deps -- stable callback off the hook
 
   usePagePreload(toSpreadStart(page));
 
@@ -308,9 +393,6 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   const zoomOut = () => canZoomOut && setZoom(ZOOM_STEPS[zoomIndex - 1]);
 
   const s = toSpreadStart(page);
-  const pos = single ? page : s;
-  const canPrev = pos > 1;
-  const canNext = single ? page < PAGE_COUNT : s < PAGE_COUNT - 1;
 
   // RTL book mechanics: the unread stack is on the LEFT. Advancing from
   // (f, f+1) to (t, t+1) lifts the left page — the leaf carries f+1 on its
@@ -334,8 +416,9 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   // Positive rotation carries the left leaf rightward (next); negative mirrors.
   const leafDeg = flip ? (flip.dir === "next" ? 180 : -180) * flip.progress : 0;
   // Face shading peaks mid-turn (the page bows away from the light).
-  const shade = flip ? Math.sin(Math.PI * flip.progress) * 0.9 : 0;
-  const moveClass = flip?.phase === "drag" ? "leaf-dragging" : "leaf-move";
+  const shade = flip ? Math.sin(Math.PI * flip.progress) * 0.55 : 0;
+  const moveClass =
+    flip?.phase === "drag" ? "leaf-dragging" : flip?.auto ? "leaf-move" : "leaf-release";
 
   // Single-page mode: a fold around the right edge (the spine side of an RTL
   // book) — the page turns rightward to advance, same progress model.
@@ -356,12 +439,22 @@ export default function Reader({ initialPage }: { initialPage: number }) {
 
   const metaRight = getPageMeta(single ? page : s);
   const metaLeft = single ? null : getPageMeta(s + 1);
+  // Bare names in the caption («البقرة», not «سُورَةُ البَقَرَةِ») — the
+  // fixed-width toolbar chip has no room for the honorific, and the design
+  // drops it too. The prefix is voweled in the data, so match it bare.
+  const stripSurahPrefix = (name: string) => {
+    const [first, ...rest] = name.split(" ");
+    const bare = first.replace(/[ً-ْٰـ]/g, "");
+    return bare === "سورة" && rest.length > 0 ? rest.join(" ") : name;
+  };
   const captionSurahs = Array.from(
-    new Set([...metaRight.surahs, ...(metaLeft?.surahs ?? [])])
+    new Set(
+      [...metaRight.surahs, ...(metaLeft?.surahs ?? [])].map(stripSurahPrefix)
+    )
   );
   const surahLabel =
-    captionSurahs.length > 3
-      ? `${captionSurahs.slice(0, 3).join("، ")}…`
+    captionSurahs.length > 2
+      ? `${captionSurahs.slice(0, 2).join("، ")}…`
       : captionSurahs.join("، ");
 
   const bookWidth = single
@@ -377,6 +470,10 @@ export default function Reader({ initialPage }: { initialPage: number }) {
       data-reader-theme={theme}
       className="reader-canvas relative h-svh w-full select-none overflow-hidden"
     >
+      {/* Open-state rendering: unmounted entirely once the book settles
+          shut, so the closed state is only ever the cover. */}
+      {!mushaf.isSettledClosed && (
+        <>
       {/* RTL: advancing moves rightward — the right zone is NEXT */}
       <NavZone side="right" label="الصفحة التالية" onClick={() => navigate("next")} />
       <NavZone side="left" label="الصفحة السابقة" onClick={() => navigate("prev")} />
@@ -385,11 +482,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         <div className="flex min-h-full min-w-full">
           <div className="m-auto py-[3.5svh]" style={{ width: bookWidth }}>
             {single ? (
-              <BookFrame
-                aspectRatio="622 / 917"
-                readPages={page - 1}
-                remainingPages={PAGE_COUNT - page}
-              >
+              <BookFrame aspectRatio="622 / 917">
                 <div ref={bookRef} className="absolute inset-0">
                   {singleUnder !== null && (
                     <div className="absolute inset-0">
@@ -405,20 +498,12 @@ export default function Reader({ initialPage }: { initialPage: number }) {
                   </div>
                   {isBookmarked(page) && <Ribbon style={{ right: "9%" }} />}
                   {/* RTL: the next leaf is grabbed at the LEFT edge and pulled right */}
-                  {canNext && (
-                    <DragStrip side="left" onDown={startDrag("next")} onMove={moveDrag} onUp={endDrag} />
-                  )}
-                  {canPrev && (
-                    <DragStrip side="right" onDown={startDrag("prev")} onMove={moveDrag} onUp={endDrag} />
-                  )}
+                  <DragStrip side="left" onDown={startDrag("next")} onMove={moveDrag} onUp={endDrag} />
+                  <DragStrip side="right" onDown={startDrag("prev")} onMove={moveDrag} onUp={endDrag} />
                 </div>
               </BookFrame>
             ) : (
-              <BookFrame
-                aspectRatio="1244 / 917"
-                readPages={s - 1}
-                remainingPages={PAGE_COUNT - (s + 1)}
-              >
+              <BookFrame aspectRatio="1244 / 917">
                 <div ref={bookRef} className="absolute inset-0">
                   <div className="absolute inset-y-0 right-0 w-1/2">
                     <PageImage page={baseRight} />
@@ -426,36 +511,31 @@ export default function Reader({ initialPage }: { initialPage: number }) {
                   <div className="absolute inset-y-0 left-0 w-1/2">
                     <PageImage page={baseLeft} />
                   </div>
+                  <SpreadShading />
                   {leaf && flip && (
                     <div
-                      className={`absolute inset-y-0 z-10 w-1/2 [transform-style:preserve-3d] ${moveClass} ${
+                      className={`absolute inset-y-0 z-30 w-1/2 [transform-style:preserve-3d] ${moveClass} ${
                         leaf.side === "right" ? "left-1/2 origin-left" : "left-0 origin-right"
                       }`}
                       style={{ transform: `rotateY(${leafDeg}deg)` }}
                       onTransitionEnd={onLeafTransitionEnd}
                     >
-                      <div className="absolute inset-0 [backface-visibility:hidden]">
+                      <div className="leaf-face absolute inset-0 [backface-visibility:hidden]">
                         <PageImage page={leaf.front} />
                         <LeafShade side={leaf.side} face="front" auto={flip.auto} shade={shade} />
                       </div>
-                      <div className="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)]">
+                      <div className="leaf-face absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)]">
                         <PageImage page={leaf.back} />
                         <LeafShade side={leaf.side} face="back" auto={flip.auto} shade={shade} />
                       </div>
                     </div>
                   )}
-                  {/* center spine gutter */}
-                  <div className="book-spine pointer-events-none absolute inset-y-0 left-1/2 z-20 w-24 -translate-x-1/2" />
                   {/* bookmark ribbons on the settled spread */}
                   {isBookmarked(s) && <Ribbon style={{ right: "9%" }} />}
                   {isBookmarked(s + 1) && <Ribbon style={{ left: "9%" }} />}
                   {/* RTL: the next leaf is grabbed at the LEFT edge and pulled right */}
-                  {canNext && (
-                    <DragStrip side="left" onDown={startDrag("next")} onMove={moveDrag} onUp={endDrag} />
-                  )}
-                  {canPrev && (
-                    <DragStrip side="right" onDown={startDrag("prev")} onMove={moveDrag} onUp={endDrag} />
-                  )}
+                  <DragStrip side="left" onDown={startDrag("next")} onMove={moveDrag} onUp={endDrag} />
+                  <DragStrip side="right" onDown={startDrag("prev")} onMove={moveDrag} onUp={endDrag} />
                 </div>
               </BookFrame>
             )}
@@ -463,11 +543,27 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         </div>
       </div>
 
+        </>
+      )}
+
+      {/* Closed-state rendering: mounted only while closing/closed/opening,
+          fresh each cycle so its animations start clean. */}
+      {mushaf.cover && mushaf.side && (
+        <ClosedMushafCover
+          phase={mushaf.cover}
+          side={mushaf.side}
+          onOpen={mushaf.open}
+        />
+      )}
+
+      {!mushaf.isSettledClosed && (
+        <>
       <ReaderToolbar
         idle={idle && !jumpOpen && !marksOpen && !panelOpen}
+        hidden={!mushaf.isOpen}
         caption={
           <>
-            <span className="font-display text-base leading-none text-ink">
+            <span className="min-w-0 truncate font-display text-[17px] leading-none text-ink">
               {surahLabel}
             </span>
             <span className="hidden text-[9px] text-gold/80 sm:inline" aria-hidden>
@@ -486,12 +582,9 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         }
         onPrev={() => navigate("prev")}
         onNext={() => navigate("next")}
-        canPrev={canPrev}
-        canNext={canNext}
         bookmarked={isBookmarked(page)}
         onToggleBookmark={toggleBookmark}
         onOpenJump={() => setJumpOpen(true)}
-        onOpenBookmarks={() => setMarksOpen(true)}
         zoom={zoom}
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
@@ -505,7 +598,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
 
       <ReaderSidePanel
         open={panelOpen}
-        onToggle={setPanelOpen}
+        onClose={() => setPanelOpen(false)}
         onOpenIndex={() => {
           setPanelOpen(false);
           setJumpOpen(true);
@@ -538,7 +631,29 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         onRemove={remove}
         onSetNote={setNote}
       />
+        </>
+      )}
     </main>
+  );
+}
+
+/**
+ * Spread shading, per the design: dark outer page edges, a broad falloff
+ * toward the binding on each side, a pale bow highlight, then the firm spine
+ * band with its white hairline seam. All below the turning leaf (z-30).
+ */
+function SpreadShading() {
+  return (
+    <>
+      <div aria-hidden className="spread-edge-right pointer-events-none absolute inset-y-0 right-0 z-10 w-[4%]" />
+      <div aria-hidden className="spread-edge-left pointer-events-none absolute inset-y-0 left-0 z-10 w-[4%]" />
+      <div aria-hidden className="spread-spine-left pointer-events-none absolute inset-y-0 left-1/2 z-10 w-[17%]" />
+      <div aria-hidden className="spread-spine-right pointer-events-none absolute inset-y-0 right-1/2 z-10 w-[17%]" />
+      <div aria-hidden className="spread-bow-left pointer-events-none absolute inset-y-0 left-[66%] z-10 w-[6%]" />
+      <div aria-hidden className="spread-bow-right pointer-events-none absolute inset-y-0 right-[66%] z-10 w-[6%]" />
+      <div aria-hidden className="book-spine pointer-events-none absolute inset-y-0 left-1/2 z-20 w-[46px] -translate-x-1/2" />
+      <div aria-hidden className="spine-hairline pointer-events-none absolute inset-y-[1%] left-1/2 z-20 w-px -translate-x-1/2" />
+    </>
   );
 }
 
@@ -558,8 +673,8 @@ function LeafShade({
 }) {
   const towardSpine =
     (side === "right") === (face === "front")
-      ? "bg-gradient-to-r from-black/20 to-transparent"
-      : "bg-gradient-to-l from-black/20 to-transparent";
+      ? "bg-gradient-to-r from-black/30 to-transparent to-[62%]"
+      : "bg-gradient-to-l from-black/30 to-transparent to-[62%]";
   return (
     <div
       aria-hidden
@@ -590,7 +705,7 @@ function DragStrip({
 }) {
   return (
     <div
-      className={`drag-strip absolute inset-y-0 z-30 w-[9%] min-w-11 ${
+      className={`drag-strip absolute inset-y-0 z-40 w-[9%] min-w-11 ${
         side === "right" ? "right-0" : "left-0"
       }`}
       onPointerDown={onDown}
@@ -624,7 +739,7 @@ function NavZone({
     >
       <span
         aria-hidden
-        className="flex h-full items-center justify-center text-[color:var(--canvas-fg)] opacity-0 transition-opacity duration-300 group-hover:opacity-80"
+        className="flex h-full items-center justify-center text-[color:var(--canvas-fg)] opacity-0 transition-opacity duration-300 group-hover:opacity-75"
       >
         <svg
           viewBox="0 0 24 24"
@@ -633,9 +748,10 @@ function NavZone({
           strokeWidth={1.5}
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="h-9 w-9"
+          className="h-[34px] w-[34px]"
         >
-          <path d={side === "left" ? "M15 6l-6 6 6 6" : "M9 6l6 6-6 6"} />
+          {/* per the design, the chevrons point inward, toward the spine */}
+          <path d={side === "left" ? "M9 6l6 6-6 6" : "M15 6l-6 6 6 6"} />
         </svg>
       </span>
     </button>
