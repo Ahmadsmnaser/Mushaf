@@ -4,7 +4,7 @@
 // view (opposite the tafsir drawer). It appears with the first playback and
 // then stays — stopping from here must NOT hide it — until the ✕ dismisses
 // it. Controls, top to bottom: dismiss, current ayah, previous, play/pause,
-// next, stop. Forward points left, matching the book's reading direction.
+// next, stop.
 
 import type { QuranAudioController } from "@/lib/audio/useQuranAudio";
 
@@ -17,8 +17,8 @@ function verseLabel(verseKey: string | null): string {
 
 function PlayIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5" aria-hidden>
-      <path d="M17 5.5v13a.75.75 0 0 1-1.15.63l-10-6.5a.75.75 0 0 1 0-1.26l10-6.5A.75.75 0 0 1 17 5.5Z" />
+    <svg viewBox="0 0 24 24" fill="currentColor" className="play-icon h-3.5 w-3.5" aria-hidden>
+      <path d="M7 5.5v13a.75.75 0 0 0 1.15.63l10-6.5a.75.75 0 0 0 0-1.26l-10-6.5A.75.75 0 0 0 7 5.5Z" />
     </svg>
   );
 }
@@ -122,10 +122,10 @@ export default function AudioMiniBar({ audio }: { audio: QuranAudioController })
       aria-hidden={!audio.active}
       inert={!audio.active}
       title={`القارئ: ${audio.reciter.arabicName}`}
-      className={`audio-mini-bar fixed left-3 top-1/2 z-[46] flex -translate-y-1/2 flex-col items-center gap-0.5 rounded-full border border-gold/30 bg-paper/85 px-1 py-1.5 shadow-[0_10px_34px_-14px_rgba(40,30,14,.45)] backdrop-blur-xl ${
+      className={`audio-mini-bar fixed left-3 top-1/2 z-[46] flex flex-col items-center gap-0.5 rounded-full border border-gold/30 bg-paper/85 px-1 py-1.5 shadow-[0_10px_34px_-14px_rgba(40,30,14,.45)] backdrop-blur-xl ${
         audio.active
-          ? "visible translate-x-0 opacity-100"
-          : "invisible -translate-x-6 opacity-0 motion-reduce:translate-x-0"
+          ? "audio-mini-bar-visible"
+          : "audio-mini-bar-hidden"
       }`}
     >
       <BarButton label="إخفاء المشغل" onClick={audio.dismiss}>

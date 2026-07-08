@@ -8,9 +8,8 @@ export type AyahPlayState = "idle" | "loading" | "playing";
 
 function PlayIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className="h-3 w-3" aria-hidden>
-      {/* points left: forward = the RTL reading direction */}
-      <path d="M17 5.5v13a.75.75 0 0 1-1.15.63l-10-6.5a.75.75 0 0 1 0-1.26l10-6.5A.75.75 0 0 1 17 5.5Z" />
+    <svg viewBox="0 0 24 24" fill="currentColor" className="play-icon h-3 w-3" aria-hidden>
+      <path d="M7 5.5v13a.75.75 0 0 0 1.15.63l10-6.5a.75.75 0 0 0 0-1.26l-10-6.5A.75.75 0 0 0 7 5.5Z" />
     </svg>
   );
 }

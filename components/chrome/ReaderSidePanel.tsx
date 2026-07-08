@@ -72,7 +72,7 @@ export default function ReaderSidePanel({
       {/* backdrop (click to close) */}
       <div
         className={`drawer-backdrop fixed inset-0 z-[44] bg-ink/15 backdrop-blur-[1px] ${
-          open ? "visible opacity-100" : "invisible opacity-0"
+          open ? "drawer-backdrop-open" : "drawer-backdrop-closed"
         }`}
         onClick={onClose}
         aria-hidden
@@ -81,12 +81,13 @@ export default function ReaderSidePanel({
       <aside
         aria-label="لوحة القراءة"
         aria-hidden={!open}
+        inert={!open}
         // Overlays the reader (never squeezes the book). Desktop: 280px side
         // drawer on a translucent parchment surface; mobile: bottom sheet.
-        className={`reader-drawer fixed z-[45] flex flex-col gap-[22px] overflow-y-auto bg-paper/85 px-5 py-[22px] backdrop-blur-2xl backdrop-saturate-105 max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[75svh] max-sm:rounded-t-2xl max-sm:border-t max-sm:border-gold/25 sm:inset-y-0 sm:left-0 sm:w-[280px] sm:max-w-[82vw] sm:border-e sm:border-gold/20 sm:shadow-[24px_0_60px_-30px_rgba(40,30,14,.5)] ${
+        className={`reader-drawer reader-drawer-left fixed z-[45] flex flex-col gap-[22px] overflow-y-auto bg-paper/85 px-5 py-[22px] backdrop-blur-2xl backdrop-saturate-105 max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[75svh] max-sm:rounded-t-2xl max-sm:border-t max-sm:border-gold/25 sm:inset-y-0 sm:left-0 sm:w-[280px] sm:max-w-[82vw] sm:border-e sm:border-gold/20 sm:shadow-[24px_0_60px_-30px_rgba(40,30,14,.5)] ${
           open
-            ? "translate-x-0 translate-y-0"
-            : "max-sm:translate-y-full sm:-translate-x-[101%]"
+            ? "reader-drawer-open"
+            : "reader-drawer-closed-left"
         }`}
       >
         <div className="flex items-center justify-between">
@@ -110,7 +111,7 @@ export default function ReaderSidePanel({
           </button>
         </div>
 
-        <section className="rounded-lg border border-gold/20 bg-sheet/45 px-3 py-3">
+        <section>
           <AccountButton compact />
         </section>
 

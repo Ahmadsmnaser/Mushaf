@@ -54,7 +54,7 @@ export interface ReaderSettings {
 
 export const CURRENT_MUSHAF_SOURCE_ID: MushafSourceId = "madani";
 export const DEFAULT_READER_SETTINGS: ReaderSettings = {
-  readerTheme: "beige",
+  readerTheme: "green",
   mushafStyle: "classic",
 };
 

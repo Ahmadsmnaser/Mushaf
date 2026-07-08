@@ -10,7 +10,7 @@ import {
 
 export { READER_THEME_OPTIONS, READER_THEMES, type ReaderTheme };
 
-/** Reader color theme, persisted locally. SSR renders the default (beige). */
+/** Reader color theme, persisted locally. SSR renders the default (green). */
 export function useReaderTheme(): [ReaderTheme, (t: ReaderTheme) => void] {
   const [settings, setSettings] = useReaderSettings();
   const set = useCallback(

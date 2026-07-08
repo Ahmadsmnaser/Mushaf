@@ -26,11 +26,11 @@ export default function PagePlayButton({
           : "border-gold/25 text-ink-soft hover:border-accent/50 hover:text-accent"
       }`}
     >
-      <svg viewBox="0 0 24 24" fill="currentColor" className="h-3 w-3" aria-hidden>
+      <svg viewBox="0 0 24 24" fill="currentColor" className="play-icon h-3 w-3" aria-hidden>
         {playing ? (
           <rect x="6" y="6" width="12" height="12" rx="1.5" />
         ) : (
-          <path d="M17 5.5v13a.75.75 0 0 1-1.15.63l-10-6.5a.75.75 0 0 1 0-1.26l10-6.5A.75.75 0 0 1 17 5.5Z" />
+          <path d="M7 5.5v13a.75.75 0 0 0 1.15.63l10-6.5a.75.75 0 0 0 0-1.26l-10-6.5A.75.75 0 0 0 7 5.5Z" />
         )}
       </svg>
       {playing ? "إيقاف التلاوة" : "تشغيل الصفحة"}
