@@ -16,7 +16,7 @@ Add these variables in Vercel Project Settings before the first public deploymen
 
 | Variable | Required | Notes |
 | --- | --- | --- |
-| `NEXT_PUBLIC_SITE_URL` | Yes | Production origin for metadata, canonical URLs, `sitemap.xml`, and `robots.txt`, for example `https://your-domain.com`. |
+| `NEXT_PUBLIC_SITE_URL` | Yes | Production origin for metadata, canonical URLs, `sitemap.xml`, and `robots.txt`: `https://mushaf-tau.vercel.app`. |
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL. Safe to expose client-side. |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes | Supabase publishable key. Safe to expose client-side with RLS enabled. |
 | `MOKHTASAR_API_TOKEN` | If using Mokhtasar | Server-only API token for Mokhtasar tafsir. Do not prefix with `NEXT_PUBLIC_`. |
@@ -31,9 +31,9 @@ After changing environment variables in Vercel, redeploy the project so Next.js 
 1. Create or open the Supabase project.
 2. Apply the database schema from `supabase/schema.sql`.
 3. Enable Google OAuth in Supabase Auth.
-4. Configure the production callback URL in Supabase and Google OAuth using `NEXT_PUBLIC_SITE_URL`, for example:
-   - Site URL: `https://your-domain.com`
-   - Callback URL: `https://your-domain.com/auth/callback`
+4. Configure the production callback URL in Supabase and Google OAuth using `NEXT_PUBLIC_SITE_URL`:
+   - Site URL: `https://mushaf-tau.vercel.app`
+   - Callback URL: `https://mushaf-tau.vercel.app/auth/callback`
 5. Add the Supabase environment variables in Vercel Project Settings.
 
 Reading remains available without login. Login is only needed for syncing saved marks, notes, preferences, and last-read page.
