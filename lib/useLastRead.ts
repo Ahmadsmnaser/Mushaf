@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { clampPage, PAGE_COUNT } from "@/lib/mushaf/source";
 import { KEYS, readJSON, writeJSON } from "./storage";
+import { useAuthUser } from "@/lib/auth/useAuthUser";
+import { userApi } from "@/lib/user/client";
 
 const isPage = (v: unknown): v is number =>
   typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= PAGE_COUNT;
@@ -14,6 +16,7 @@ export function saveLastRead(page: number): void {
 
 /** Last visited page, or null before hydration / on first visit. */
 export function useLastRead(): number | null {
+  const auth = useAuthUser();
   const [lastRead, setLastRead] = useState<number | null>(null);
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -26,5 +29,18 @@ export function useLastRead(): number | null {
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
+  useEffect(() => {
+    if (!auth.isAuthenticated) return;
+    let alive = true;
+    void userApi
+      .getPreferences()
+      .then(({ preferences }) => {
+        if (alive && preferences.lastReadPage) setLastRead(preferences.lastReadPage);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [auth.isAuthenticated, auth.user?.id]);
   return lastRead;
 }

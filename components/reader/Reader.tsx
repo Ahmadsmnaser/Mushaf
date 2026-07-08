@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { clampPage, getPageMeta, PAGE_COUNT } from "@/lib/mushaf/source";
 import { saveLastRead } from "@/lib/useLastRead";
 import { useMarks } from "@/lib/useMarks";
-import { useReaderSettings } from "@/lib/readerSettings";
+import { useSyncedReaderSettings } from "@/lib/useSyncedReaderSettings";
 import { useAutoHideToolbar } from "@/lib/useAutoHideToolbar";
 import { usePagePreload } from "@/lib/usePagePreload";
 import { useMushafState } from "@/lib/useMushafState";
@@ -18,6 +18,9 @@ import ClosedMushafCover from "./ClosedMushafCover";
 import PageImage from "./PageImage";
 import TafsirPanel from "./TafsirPanel";
 import AudioMiniBar from "./AudioMiniBar";
+import LocalMarksMigrationPrompt from "@/components/auth/LocalMarksMigrationPrompt";
+import SignInPrompt from "@/components/auth/SignInPrompt";
+import { userApi } from "@/lib/user/client";
 
 const FLIP_MS = 560;
 const ZOOM_STEPS = [1, 1.25, 1.5, 2] as const;
@@ -118,7 +121,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
     if (!mushaf.isOpen) stopAudio();
   }, [mushaf.isOpen, stopAudio]);
 
-  const [readerSettings, setReaderSettings] = useReaderSettings();
+  const [readerSettings, setReaderSettings] = useSyncedReaderSettings();
   const { readerTheme, mushafStyle } = readerSettings;
   const idle = useAutoHideToolbar(5000);
   const {
@@ -130,6 +133,11 @@ export default function Reader({ initialPage }: { initialPage: number }) {
     togglePageBookmark,
     exportStorage,
     importStorage,
+    marksPending,
+    isAuthenticated,
+    loginPromptOpen,
+    closeLoginPrompt,
+    openLoginPrompt,
   } = useMarks();
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -387,7 +395,10 @@ export default function Reader({ initialPage }: { initialPage: number }) {
     window.history.replaceState(null, "", `/page/${page}`);
     document.title = `المصحف — صفحة ${arNum(page)}`;
     saveLastRead(page);
-  }, [page]);
+    if (isAuthenticated) {
+      void userApi.updatePreferences({ lastReadPage: page }).catch(() => {});
+    }
+  }, [isAuthenticated, page]);
 
   useEffect(() => {
     const onPop = () => {
@@ -857,7 +868,12 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         isPageBookmarked={isPageBookmarked}
         exportStorage={exportStorage}
         importStorage={importStorage}
+        isAuthenticated={isAuthenticated}
+        saving={marksPending}
+        onRequireSignIn={openLoginPrompt}
       />
+      <SignInPrompt open={loginPromptOpen} onClose={closeLoginPrompt} />
+      <LocalMarksMigrationPrompt />
         </>
       )}
     </main>

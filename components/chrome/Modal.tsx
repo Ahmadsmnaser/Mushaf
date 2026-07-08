@@ -5,6 +5,10 @@ import { useEffect, useRef } from "react";
 /**
  * Minimal dialog shell shared by the jump modal and bookmarks panel:
  * backdrop click / Escape to close, focus moved inside on open.
+ *
+ * Stays mounted while closed (visibility flips after the exit fade — the
+ * .modal-shell presence pattern in globals.css) so closing animates instead
+ * of vanishing; `inert` keeps the hidden dialog out of the tab order.
  */
 export default function Modal({
   open,
@@ -34,17 +38,19 @@ export default function Modal({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
-
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className={`modal-shell fixed inset-0 z-50 flex items-center justify-center p-4 ${
+        open ? "modal-open" : ""
+      }`}
       role="dialog"
       aria-modal="true"
       aria-label={title}
+      aria-hidden={!open}
+      inert={!open}
     >
       <div
-        className="absolute inset-0 bg-ink/40 backdrop-blur-[2px]"
+        className="modal-backdrop absolute inset-0 bg-ink/40 backdrop-blur-[2px]"
         onClick={onClose}
         aria-hidden
       />
@@ -58,7 +64,7 @@ export default function Modal({
           <button
             onClick={onClose}
             aria-label="إغلاق"
-            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-ink-soft transition-colors hover:bg-ink/5 hover:text-ink"
+            className="pressable flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-ink-soft hover:bg-ink/5 hover:text-ink"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" className="h-4 w-4">
               <path d="M6 6l12 12M18 6L6 18" />

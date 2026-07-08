@@ -246,7 +246,7 @@ export default function TafsirPanel({
     <>
       {/* backdrop (click to close) */}
       <div
-        className={`fixed inset-0 z-[44] bg-ink/15 backdrop-blur-[1px] transition-[opacity,visibility] duration-300 motion-reduce:transition-none ${
+        className={`drawer-backdrop fixed inset-0 z-[44] bg-ink/15 backdrop-blur-[1px] ${
           open ? "visible opacity-100" : "invisible opacity-0"
         }`}
         onClick={onClose}
@@ -258,7 +258,7 @@ export default function TafsirPanel({
         aria-hidden={!open}
         // Right drawer on the reading-start side; bottom sheet on mobile.
         // Same surface and motion as the reading panel, mirrored.
-        className={`fixed z-[45] flex flex-col bg-paper/85 backdrop-blur-2xl backdrop-saturate-105 transition-transform duration-[340ms] ease-[cubic-bezier(.3,.6,.2,1)] motion-reduce:transition-none max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[78svh] max-sm:rounded-t-2xl max-sm:border-t max-sm:border-gold/25 sm:inset-y-0 sm:right-0 sm:w-[400px] sm:max-w-[86vw] sm:border-e sm:border-gold/20 sm:shadow-[-24px_0_60px_-30px_rgba(40,30,14,.5)] ${
+        className={`reader-drawer fixed z-[45] flex flex-col bg-paper/85 backdrop-blur-2xl backdrop-saturate-105 max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[78svh] max-sm:rounded-t-2xl max-sm:border-t max-sm:border-gold/25 sm:inset-y-0 sm:right-0 sm:w-[400px] sm:max-w-[86vw] sm:border-e sm:border-gold/20 sm:shadow-[-24px_0_60px_-30px_rgba(40,30,14,.5)] ${
           open
             ? "translate-x-0 translate-y-0"
             : "max-sm:translate-y-full sm:translate-x-[101%]"
@@ -272,7 +272,7 @@ export default function TafsirPanel({
             // As in the toolbar: mouse clicks must not pin focus on the
             // control, or arrow-key page turns get swallowed afterwards.
             onMouseDown={(e) => e.preventDefault()}
-            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-ink-soft transition-colors hover:bg-ink/10"
+            className="pressable flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-ink-soft hover:bg-ink/10"
           >
             <svg
               viewBox="0 0 24 24"
@@ -331,7 +331,7 @@ export default function TafsirPanel({
                 onMouseDown={(e) => e.preventDefault()}
                 aria-pressed={s.id === sourceId}
                 title={s.available ? s.publisher : "يتطلب إعداد مفتاح API على الخادم"}
-                className={`cursor-pointer rounded-full border px-3 py-1 text-[12px] transition-colors ${
+                className={`pressable cursor-pointer rounded-full border px-3 py-1 text-[12px] ${
                   s.id === sourceId
                     ? "border-accent bg-accent/10 text-accent"
                     : "border-gold/25 text-ink-soft hover:border-accent/50 hover:text-accent"
@@ -382,7 +382,7 @@ export default function TafsirPanel({
                         onClick={() => scrollToPage(p.pageNumber)}
                         onMouseDown={(e) => e.preventDefault()}
                         aria-current={active ? "true" : undefined}
-                        className={`cursor-pointer rounded-full border px-3 py-1 text-[12px] transition-colors ${
+                        className={`pressable cursor-pointer rounded-full border px-3 py-1 text-[12px] ${
                           active
                             ? "border-accent bg-accent/10 text-accent"
                             : "border-gold/25 text-ink-soft hover:border-accent/50 hover:text-accent"

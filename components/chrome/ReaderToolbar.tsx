@@ -54,7 +54,7 @@ function ToolButton({
       aria-label={label}
       title={label}
       disabled={disabled}
-      className={`flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-default disabled:opacity-30 ${
+      className={`pressable flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full disabled:cursor-default disabled:opacity-30 ${
         active ? "text-accent" : "text-ink-soft hover:bg-accent/10 hover:text-accent"
       }`}
     >
@@ -135,7 +135,7 @@ export default function ReaderToolbar({
         <button
           onClick={onOpenJump}
           title="الانتقال السريع (Ctrl+K)"
-          className="reader-toolbar-caption flex h-9 shrink cursor-pointer items-baseline justify-center gap-2 overflow-hidden whitespace-nowrap rounded-full px-3.5 text-ink-soft transition-colors hover:bg-accent/10 hover:text-accent sm:w-[220px] lg:h-auto lg:w-10 lg:flex-col lg:items-center lg:gap-1 lg:px-1.5 lg:py-2"
+          className="reader-toolbar-caption pressable flex h-9 shrink cursor-pointer items-baseline justify-center gap-2 overflow-hidden whitespace-nowrap rounded-full px-3.5 text-ink-soft hover:bg-accent/10 hover:text-accent sm:w-[220px] lg:h-auto lg:w-10 lg:flex-col lg:items-center lg:gap-1 lg:px-1.5 lg:py-2"
         >
           {caption}
           <span className="reader-toolbar-caption-popover" dir="rtl">
@@ -147,7 +147,7 @@ export default function ReaderToolbar({
           href="/"
           aria-label="الرئيسية"
           title="الرئيسية"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-ink-soft transition-colors hover:bg-accent/10 hover:text-accent"
+          className="pressable flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-ink-soft hover:bg-accent/10 hover:text-accent"
         >
           <Icon d={paths.home} />
         </Link>
@@ -201,7 +201,7 @@ export default function ReaderToolbar({
             onClick={onResetZoom}
             title="ملاءمة الشاشة"
             aria-label="ملاءمة الشاشة"
-            className="h-9 w-[46px] shrink-0 cursor-pointer rounded-full text-xs text-ink-soft transition-colors hover:bg-accent/10 hover:text-accent lg:w-10"
+            className="pressable h-9 w-[46px] shrink-0 cursor-pointer rounded-full text-xs text-ink-soft hover:bg-accent/10 hover:text-accent lg:w-10"
           >
             {arNum(Math.round(zoom * 100))}٪
           </button>

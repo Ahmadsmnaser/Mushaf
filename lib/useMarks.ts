@@ -10,27 +10,32 @@ import {
   QuranMark,
   readMarksStorage,
   sortMarks,
-  writeMarksStorage,
   type MarkType,
   type MarksStorageV1,
 } from "@/lib/marks";
+import { useAuthUser } from "@/lib/auth/useAuthUser";
+import { userApi } from "@/lib/user/client";
 
 export type { MarkType, QuranMark, MarksStorageV1 };
 
 type ImportResult =
-  | { ok: true; added: number; updated: number }
+  | { ok: true; added: number; updated: number; skipped?: number }
   | { ok: false; message: string };
 
 function nextStorage(marks: QuranMark[]): MarksStorageV1 {
   return { version: MARKS_STORAGE_VERSION, marks: sortMarks(marks) };
 }
 
-function sameMark(a: QuranMark, b: QuranMark): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
+function replaceMark(marks: QuranMark[], next: QuranMark): QuranMark[] {
+  return sortMarks(marks.map((mark) => (mark.id === next.id ? next : mark)));
 }
 
 export function useMarks() {
+  const auth = useAuthUser();
   const [marks, setMarks] = useState<QuranMark[]>([]);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loginPromptOpen, setLoginPromptOpen] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -39,11 +44,55 @@ export function useMarks() {
     return () => window.clearTimeout(timer);
   }, []);
 
-  const update = useCallback((next: QuranMark[]) => {
-    const storage = nextStorage(next);
-    setMarks(storage.marks);
-    writeMarksStorage(storage);
-  }, []);
+  useEffect(() => {
+    if (auth.isLoading || auth.isAuthenticated) return;
+    const timer = window.setTimeout(() => {
+      setMarks(readMarksStorage().marks);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [auth.isAuthenticated, auth.isLoading]);
+
+  useEffect(() => {
+    if (!auth.isAuthenticated) return;
+    let alive = true;
+    const timer = window.setTimeout(() => {
+      setPending(true);
+      userApi
+        .getMarks()
+        .then(({ marks: cloudMarks }) => {
+          if (alive) setMarks(sortMarks(cloudMarks));
+        })
+        .catch(() => {
+          if (alive) setError("تعذر تحميل علاماتك المحفوظة.");
+        })
+        .finally(() => {
+          if (alive) setPending(false);
+        });
+    }, 0);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [auth.isAuthenticated, auth.user?.id]);
+
+  useEffect(() => {
+    if (!auth.isAuthenticated) return;
+    const onMigrated = () => {
+      setPending(true);
+      void userApi
+        .getMarks()
+        .then(({ marks: cloudMarks }) => setMarks(sortMarks(cloudMarks)))
+        .finally(() => setPending(false));
+    };
+    window.addEventListener("mushaf:marks-migrated", onMigrated);
+    return () => window.removeEventListener("mushaf:marks-migrated", onMigrated);
+  }, [auth.isAuthenticated]);
+
+  const requireLogin = useCallback(() => {
+    if (auth.isAuthenticated) return false;
+    setLoginPromptOpen(true);
+    return true;
+  }, [auth.isAuthenticated]);
 
   const bookmarkedPages = useMemo(
     () => new Set(marks.filter((m) => m.type === "bookmark").map((m) => m.pageNumber)),
@@ -60,113 +109,162 @@ export function useMarks() {
     [marks]
   );
 
+  const createCloudMark = useCallback((mark: QuranMark) => {
+    setMarks((current) => sortMarks([...current, mark]));
+    setPending(true);
+    void userApi
+      .createMark(mark)
+      .then(({ mark: saved }) => setMarks((current) => replaceMark(current, saved)))
+      .catch(() => {
+        setMarks((current) => current.filter((item) => item.id !== mark.id));
+        setError("تعذر حفظ العلامة.");
+      })
+      .finally(() => setPending(false));
+  }, []);
+
+  const updateCloudMark = useCallback((id: string, values: Partial<QuranMark>) => {
+    let previous: QuranMark[] = [];
+    const now = new Date().toISOString();
+    const patch = {
+      ...values,
+      ...(values.pageNumber ? pageMetadataFields(values.pageNumber) : {}),
+      updatedAt: now,
+    };
+    setMarks((current) => {
+      previous = current;
+      return sortMarks(
+        current.map((mark) => (mark.id === id ? { ...mark, ...patch } : mark))
+      );
+    });
+    setPending(true);
+    void userApi
+      .updateMark(id, patch)
+      .then(({ mark: saved }) => setMarks((current) => replaceMark(current, saved)))
+      .catch(() => {
+        setMarks(previous);
+        setError("تعذر تحديث العلامة.");
+      })
+      .finally(() => setPending(false));
+  }, []);
+
+  const removeCloudMark = useCallback((id: string) => {
+    let previous: QuranMark[] = [];
+    setMarks((current) => {
+      previous = current;
+      return current.filter((mark) => mark.id !== id);
+    });
+    setPending(true);
+    void userApi
+      .deleteMark(id)
+      .catch(() => {
+        setMarks(previous);
+        setError("تعذر حذف العلامة.");
+      })
+      .finally(() => setPending(false));
+  }, []);
+
   const togglePageBookmark = useCallback(
     (pageNumber: number) => {
+      if (requireLogin()) return;
       const existing = marks.find(
         (m) => m.type === "bookmark" && m.pageNumber === pageNumber && !m.verseKey
       );
-      update(
-        existing
-          ? marks.filter((m) => m.id !== existing.id)
-          : [...marks, createPageMark(pageNumber, "bookmark")]
-      );
+      if (existing) {
+        removeCloudMark(existing.id);
+        return;
+      }
+      createCloudMark(createPageMark(pageNumber, "bookmark"));
     },
-    [marks, update]
+    [createCloudMark, marks, removeCloudMark, requireLogin]
   );
 
   const addMark = useCallback(
     (pageNumber: number, type: MarkType, values: Partial<QuranMark> = {}) => {
       if (!isMarkType(type)) return null;
+      if (requireLogin()) return null;
       const mark = createPageMark(pageNumber, type, values);
-      update([...marks, mark]);
+      createCloudMark(mark);
       return mark;
     },
-    [marks, update]
+    [createCloudMark, requireLogin]
   );
 
   const updateMark = useCallback(
     (id: string, values: Partial<QuranMark>) => {
-      const now = new Date().toISOString();
-      update(
-        marks.map((mark) =>
-          mark.id === id
-            ? {
-                ...mark,
-                ...values,
-                ...(values.pageNumber ? pageMetadataFields(values.pageNumber) : {}),
-                updatedAt: now,
-              }
-            : mark
-        )
-      );
+      if (requireLogin()) return;
+      updateCloudMark(id, values);
     },
-    [marks, update]
+    [requireLogin, updateCloudMark]
   );
 
   const removeMark = useCallback(
-    (id: string) => update(marks.filter((mark) => mark.id !== id)),
-    [marks, update]
+    (id: string) => {
+      if (requireLogin()) return;
+      removeCloudMark(id);
+    },
+    [removeCloudMark, requireLogin]
   );
 
   const removePageBookmark = useCallback(
-    (pageNumber: number) =>
-      update(
-        marks.filter(
-          (mark) => !(mark.type === "bookmark" && mark.pageNumber === pageNumber && !mark.verseKey)
-        )
-      ),
-    [marks, update]
+    (pageNumber: number) => {
+      if (requireLogin()) return;
+      const existing = marks.find(
+        (mark) => mark.type === "bookmark" && mark.pageNumber === pageNumber && !mark.verseKey
+      );
+      if (existing) removeCloudMark(existing.id);
+    },
+    [marks, removeCloudMark, requireLogin]
   );
 
   const upsertNote = useCallback(
     (pageNumber: number, note: string) => {
+      if (requireLogin()) return;
       const trimmed = note.trim();
       const existing = marks.find(
         (m) => m.type === "note" && m.pageNumber === pageNumber && !m.verseKey
       );
       if (!trimmed && existing) {
-        removeMark(existing.id);
+        removeCloudMark(existing.id);
         return;
       }
       if (!trimmed) return;
       if (existing) {
-        updateMark(existing.id, { note: trimmed });
+        updateCloudMark(existing.id, { note: trimmed });
         return;
       }
-      addMark(pageNumber, "note", { note: trimmed });
+      createCloudMark(createPageMark(pageNumber, "note", { note: trimmed }));
     },
-    [addMark, marks, removeMark, updateMark]
+    [createCloudMark, marks, removeCloudMark, requireLogin, updateCloudMark]
   );
 
-  const exportStorage = useCallback(
-    () => nextStorage(marks),
-    [marks]
-  );
+  const exportStorage = useCallback(() => nextStorage(marks), [marks]);
 
   const importStorage = useCallback(
-    (input: unknown): ImportResult => {
+    async (input: unknown): Promise<ImportResult> => {
       const imported = parseImportedMarks(input);
       if (!imported) {
         return { ok: false, message: "ملف العلامات غير صالح." };
       }
-
-      let added = 0;
-      let updated = 0;
-      const byId = new Map(marks.map((mark) => [mark.id, mark]));
-      for (const mark of imported) {
-        const existing = byId.get(mark.id);
-        if (!existing) {
-          byId.set(mark.id, mark);
-          added++;
-        } else if (!sameMark(existing, mark)) {
-          byId.set(mark.id, mark);
-          updated++;
-        }
+      if (requireLogin()) {
+        return {
+          ok: false,
+          message: "سجّل الدخول لاستيراد العلامات إلى حسابك.",
+        };
       }
-      update(Array.from(byId.values()));
-      return { ok: true, added, updated };
+      setPending(true);
+      try {
+        const result = await userApi.migrateMarks(imported);
+        const { marks: cloudMarks } = await userApi.getMarks();
+        setMarks(sortMarks(cloudMarks));
+        return result;
+      } catch {
+        setError("تعذر استيراد العلامات.");
+        return { ok: false, message: "تعذر استيراد العلامات الآن." };
+      } finally {
+        setPending(false);
+      }
     },
-    [marks, update]
+    [requireLogin]
   );
 
   return {
@@ -181,5 +279,12 @@ export function useMarks() {
     upsertNote,
     exportStorage,
     importStorage,
+    marksPending: pending,
+    marksError: error,
+    isAuthenticated: auth.isAuthenticated,
+    authLoading: auth.isLoading,
+    loginPromptOpen,
+    openLoginPrompt: () => setLoginPromptOpen(true),
+    closeLoginPrompt: () => setLoginPromptOpen(false),
   };
 }

@@ -41,6 +41,13 @@ export default function QuickJumpModal({
     return surahs.filter((s) => normalizeArabic(s.name_ar).includes(q));
   }, [query, isNumeric, surahs]);
 
+  // The modal shell stays mounted for its exit animation, so the query must
+  // be cleared on every close path (Escape, backdrop, ✕) — not just on go().
+  const close = () => {
+    setQuery("");
+    onClose();
+  };
+
   const go = (page: number) => {
     onSelect(clampPage(page));
     setQuery("");
@@ -53,14 +60,14 @@ export default function QuickJumpModal({
   };
 
   const tabClass = (active: boolean) =>
-    `flex-1 cursor-pointer rounded-full border-0 py-[7px] text-[13px] transition-colors ${
+    `pressable flex-1 cursor-pointer rounded-full border-0 py-[7px] text-[13px] ${
       active
         ? "bg-sheet text-accent shadow-[0_1px_3px_rgba(40,30,14,.18)]"
         : "bg-transparent text-ink-soft"
     }`;
 
   return (
-    <Modal open={open} onClose={onClose} title="الانتقال السريع" maxWidth="max-w-[460px]">
+    <Modal open={open} onClose={close} title="الانتقال السريع" maxWidth="max-w-[460px]">
       <div className="border-b border-gold/20 px-[18px] pb-3.5 pt-3">
         <input
           data-autofocus
@@ -133,7 +140,7 @@ export default function QuickJumpModal({
                 key={j.number}
                 onClick={() => go(j.first_page)}
                 aria-label={`الجزء ${arNum(j.number)}`}
-                className="flex cursor-pointer flex-col items-center gap-0.5 rounded-[9px] border border-gold/25 px-0.5 py-[9px] transition-colors hover:border-accent/55 hover:bg-accent/10"
+                className="pressable flex cursor-pointer flex-col items-center gap-0.5 rounded-[9px] border border-gold/25 px-0.5 py-[9px] hover:border-accent/55 hover:bg-accent/10"
               >
                 <span className="font-display text-lg leading-none text-accent">
                   {arNum(j.number)}

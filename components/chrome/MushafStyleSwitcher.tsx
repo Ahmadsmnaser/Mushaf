@@ -19,7 +19,7 @@ export default function MushafStyleSwitcher({
           aria-label={style.label}
           title={style.label}
           onClick={() => onChange(style.id)}
-          className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-2 text-start transition-colors ${
+          className={`pressable flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-2 text-start ${
             mushafStyle === style.id
               ? "border-accent bg-accent/10"
               : "border-gold/20 hover:border-gold/50"

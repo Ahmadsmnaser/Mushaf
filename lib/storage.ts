@@ -29,4 +29,5 @@ export const KEYS = {
   theme: "mushaf.v1.theme",
   readerTheme: "mushaf.v2.readerTheme",
   mushafStyle: "mushaf.v2.mushafStyle",
+  marksMigrationDone: "mushaf.v1.marksMigrationDone",
 } as const;

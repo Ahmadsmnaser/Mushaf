@@ -97,7 +97,7 @@ function BarButton({
       disabled={disabled}
       title={label}
       aria-label={label}
-      className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors disabled:opacity-35 ${
+      className={`pressable flex h-8 w-8 items-center justify-center rounded-full disabled:opacity-35 ${
         accent
           ? "border border-accent bg-accent/10 text-accent hover:bg-accent/20"
           : "text-ink-soft hover:bg-ink/10 hover:text-accent"
@@ -109,16 +109,24 @@ function BarButton({
 }
 
 export default function AudioMiniBar({ audio }: { audio: QuranAudioController }) {
-  if (!audio.active) return null;
-
   const busy = audio.isPlaying || audio.isLoading;
 
   return (
+    // Kept mounted so appearing/dismissing can animate: it slides in from its
+    // docked edge with the first playback and eases back out on ✕. Visibility
+    // (delayed, in the transition list) removes it from hit-testing after the
+    // fade; `inert` keeps the hidden controls out of the tab order.
     <div
       role="group"
       aria-label="مشغل التلاوة"
+      aria-hidden={!audio.active}
+      inert={!audio.active}
       title={`القارئ: ${audio.reciter.arabicName}`}
-      className="fixed left-3 top-1/2 z-[46] flex -translate-y-1/2 flex-col items-center gap-0.5 rounded-full border border-gold/30 bg-paper/85 px-1 py-1.5 shadow-[0_10px_34px_-14px_rgba(40,30,14,.45)] backdrop-blur-xl"
+      className={`audio-mini-bar fixed left-3 top-1/2 z-[46] flex -translate-y-1/2 flex-col items-center gap-0.5 rounded-full border border-gold/30 bg-paper/85 px-1 py-1.5 shadow-[0_10px_34px_-14px_rgba(40,30,14,.45)] backdrop-blur-xl ${
+        audio.active
+          ? "visible translate-x-0 opacity-100"
+          : "invisible -translate-x-6 opacity-0 motion-reduce:translate-x-0"
+      }`}
     >
       <BarButton label="إخفاء المشغل" onClick={audio.dismiss}>
         <svg

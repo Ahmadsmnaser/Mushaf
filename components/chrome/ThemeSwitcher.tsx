@@ -19,7 +19,7 @@ export default function ThemeSwitcher({
           aria-label={t.label}
           title={t.label}
           onClick={() => onChange(t.id)}
-          className={`flex cursor-pointer flex-col items-center gap-1.5 rounded-lg border px-1 py-2 transition-colors ${
+          className={`pressable flex cursor-pointer flex-col items-center gap-1.5 rounded-lg border px-1 py-2 ${
             theme === t.id
               ? "border-accent bg-accent/10"
               : "border-gold/20 hover:border-gold/50"

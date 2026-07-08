@@ -16,6 +16,24 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Google Login Setup
+
+This app uses Supabase Auth with Google and Supabase Postgres for private user marks/preferences.
+
+1. Create a Supabase project.
+2. Run the SQL in `supabase/schema.sql` in the Supabase SQL editor.
+3. In Supabase Auth providers, enable Google and add your Google OAuth client id/secret.
+4. Add these redirect URLs:
+   - Supabase redirect allow list: `http://localhost:3000/auth/callback`
+   - Google authorized JavaScript origin: `http://localhost:3000`
+   - Google authorized redirect URI: the callback URL shown by Supabase for the Google provider.
+5. Copy `.env.example` to `.env.local` and set:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+   - `NEXT_PUBLIC_SITE_URL`
+
+Guests can still read normally. Saving marks, notes, and synced preferences requires signing in.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

@@ -93,6 +93,9 @@ export default function MarksPanel({
   isPageBookmarked,
   exportStorage,
   importStorage,
+  isAuthenticated = false,
+  saving = false,
+  onRequireSignIn,
 }: {
   open: boolean;
   onClose: () => void;
@@ -105,7 +108,13 @@ export default function MarksPanel({
   onTogglePageBookmark?: (page: number) => void;
   isPageBookmarked?: (page: number) => boolean;
   exportStorage: () => MarksStorageV1;
-  importStorage: (input: unknown) => { ok: true; added: number; updated: number } | { ok: false; message: string };
+  importStorage: (input: unknown) =>
+    | Promise<{ ok: true; added: number; updated: number; skipped?: number } | { ok: false; message: string }>
+    | { ok: true; added: number; updated: number; skipped?: number }
+    | { ok: false; message: string };
+  isAuthenticated?: boolean;
+  saving?: boolean;
+  onRequireSignIn?: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
@@ -137,7 +146,11 @@ export default function MarksPanel({
     if (!currentPage) return;
     const note = newNote.trim();
     if (!note) return;
-    onAddMark(currentPage, newType, { note });
+    const saved = onAddMark(currentPage, newType, { note });
+    if (!saved) {
+      setStatus("سجّل الدخول لحفظ علاماتك وملاحظاتك ومزامنتها بين أجهزتك.");
+      return;
+    }
     setNewNote("");
     setStatus("تم حفظ الملاحظة.");
   };
@@ -159,7 +172,7 @@ export default function MarksPanel({
     if (!file) return;
     try {
       const parsed = JSON.parse(await file.text()) as unknown;
-      const result = importStorage(parsed);
+      const result = await importStorage(parsed);
       if (!result.ok) {
         setStatus(result.message);
         return;
@@ -176,6 +189,22 @@ export default function MarksPanel({
     <Modal open={open} onClose={onClose} title="العلامات والملاحظات" maxWidth="max-w-2xl">
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="border-b border-gold/15 px-5 py-3">
+          {!isAuthenticated && (
+            <section className="mb-3 rounded-lg border border-gold/20 bg-sheet/55 px-3 py-3">
+              <p className="text-sm leading-6 text-ink">
+                سجّل الدخول لحفظ علاماتك وملاحظاتك ومزامنتها بين أجهزتك.
+              </p>
+              {onRequireSignIn && (
+                <button
+                  type="button"
+                  onClick={onRequireSignIn}
+                  className="pressable mt-2 rounded-full border border-gold/30 px-3 py-1 text-xs text-accent hover:bg-accent/10"
+                >
+                  تسجيل الدخول بواسطة Google
+                </button>
+              )}
+            </section>
+          )}
           {currentPage && currentMeta && (
             <section className="rounded-lg border border-gold/20 bg-sheet/55 px-3 py-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -192,7 +221,7 @@ export default function MarksPanel({
                   </p>
                 </div>
                 {onTogglePageBookmark && isPageBookmarked && (
-                  <ActionButton onClick={() => onTogglePageBookmark(currentPage)}>
+                  <ActionButton onClick={() => onTogglePageBookmark(currentPage)} disabled={saving}>
                     {isPageBookmarked(currentPage) ? "إزالة العلامة" : "حفظ علامة"}
                   </ActionButton>
                 )}
@@ -216,7 +245,7 @@ export default function MarksPanel({
                   placeholder="أضف ملاحظة لهذه الصفحة..."
                   className="min-w-0 rounded border border-gold/25 bg-paper px-3 py-2 text-sm text-ink placeholder:text-ink-soft/55"
                 />
-                <ActionButton onClick={addCurrentPageNote} disabled={!newNote.trim()}>
+                <ActionButton onClick={addCurrentPageNote} disabled={!newNote.trim() || saving}>
                   إضافة
                 </ActionButton>
               </div>
@@ -290,10 +319,11 @@ export default function MarksPanel({
                     </button>
                     <button
                       onClick={() => {
-                        if (window.confirm("هل تريد حذف هذه العلامة؟")) onRemoveMark(mark.id);
+                        if (!saving && window.confirm("هل تريد حذف هذه العلامة؟")) onRemoveMark(mark.id);
                       }}
                       aria-label="حذف العلامة"
-                      className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full text-ink-soft opacity-0 transition-all hover:bg-ink/5 hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
+                      disabled={saving}
+                      className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full text-ink-soft opacity-0 transition-all hover:bg-ink/5 hover:text-ink focus-visible:opacity-100 disabled:cursor-default disabled:opacity-30 group-hover:opacity-100"
                     >
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" className="h-4 w-4">
                         <path d="M6 6l12 12M18 6L6 18" />
@@ -346,7 +376,9 @@ export default function MarksPanel({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gold/15 px-5 py-3">
-          <p className="min-h-5 text-xs text-ink-soft">{status}</p>
+          <p className="min-h-5 text-xs text-ink-soft">
+            {saving ? "جار الحفظ..." : status}
+          </p>
           <div className="flex items-center gap-2">
             <input
               ref={fileInputRef}
