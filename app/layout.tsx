@@ -1,8 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Amiri, IBM_Plex_Sans_Arabic } from "next/font/google";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, getSiteUrl } from "@/lib/site";
 import "./globals.css";
 
-// Amiri: classical naskh with Quranic heritage — ceremonial labels only
+// Amiri: classical naskh with Quranic heritage - ceremonial labels only
 // (surah names, drawer titles). IBM Plex Sans Arabic: quiet utility UI.
 const amiri = Amiri({
   subsets: ["arabic"],
@@ -17,8 +18,30 @@ const plexArabic = IBM_Plex_Sans_Arabic({
 });
 
 export const metadata: Metadata = {
-  title: "المصحف",
-  description: "مصحف المدينة النبوية للقراءة — تجربة تصفّح كالمصحف الورقي",
+  metadataBase: getSiteUrl(),
+  applicationName: SITE_NAME,
+  title: {
+    default: SITE_TITLE,
+    template: `%s | ${SITE_NAME}`,
+  },
+  description: SITE_DESCRIPTION,
+  openGraph: {
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    url: "/",
+    siteName: SITE_NAME,
+    locale: "ar",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export const viewport: Viewport = {

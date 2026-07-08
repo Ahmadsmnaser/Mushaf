@@ -1,54 +1,76 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# تلاوة
 
-## Getting Started
+تلاوة مصحف رقمي هادئ للقراءة من المتصفح، مع تسجيل دخول Google اختياري لمزامنة العلامات والملاحظات والتفضيلات وآخر صفحة قراءة.
 
-First, run the development server:
+## Local Development
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`.
 
-## Google Login Setup
+## Vercel Environment Variables
 
-This app uses Supabase Auth with Google and Supabase Postgres for private user marks/preferences.
+Add these variables in Vercel Project Settings before the first public deployment:
 
-1. Create a Supabase project.
-2. Run the SQL in `supabase/schema.sql` in the Supabase SQL editor.
-3. In Supabase Auth providers, enable Google and add your Google OAuth client id/secret.
-4. Add these redirect URLs:
-   - Supabase redirect allow list: `http://localhost:3000/auth/callback`
-   - Google authorized JavaScript origin: `http://localhost:3000`
-   - Google authorized redirect URI: the callback URL shown by Supabase for the Google provider.
-5. Copy `.env.example` to `.env.local` and set:
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-   - `NEXT_PUBLIC_SITE_URL`
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SITE_URL` | Yes | Production origin for metadata, canonical URLs, `sitemap.xml`, and `robots.txt`, for example `https://your-domain.com`. |
+| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL. Safe to expose client-side. |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes | Supabase publishable key. Safe to expose client-side with RLS enabled. |
+| `MOKHTASAR_API_TOKEN` | If using Mokhtasar | Server-only API token for Mokhtasar tafsir. Do not prefix with `NEXT_PUBLIC_`. |
+| `MOKHTASAR_BOOK_ID` | If using Mokhtasar | Defaults to `200` when unset. |
+| `QURAN_FOUNDATION_CLIENT_ID` | If used | Reserved for Quran Foundation API integration. |
+| `QURAN_FOUNDATION_CLIENT_SECRET` | If used | Server-only secret. Do not prefix with `NEXT_PUBLIC_`. |
 
-Guests can still read normally. Saving marks, notes, and synced preferences requires signing in.
+After changing environment variables in Vercel, redeploy the project so Next.js rebuilds metadata and server routes with the new values.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Supabase Setup
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Create or open the Supabase project.
+2. Apply the database schema from `supabase/schema.sql`.
+3. Enable Google OAuth in Supabase Auth.
+4. Configure the production callback URL in Supabase and Google OAuth using `NEXT_PUBLIC_SITE_URL`, for example:
+   - Site URL: `https://your-domain.com`
+   - Callback URL: `https://your-domain.com/auth/callback`
+5. Add the Supabase environment variables in Vercel Project Settings.
 
-## Learn More
+Reading remains available without login. Login is only needed for syncing saved marks, notes, preferences, and last-read page.
 
-To learn more about Next.js, take a look at the following resources:
+## Production Metadata
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The site name is `تلاوة`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The app uses `NEXT_PUBLIC_SITE_URL` for:
 
-## Deploy on Vercel
+- Metadata base URL and canonical URLs
+- Open Graph/Twitter URL resolution
+- `sitemap.xml`
+- `robots.txt`
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The uploaded `opened-quran.png` is used to generate:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `app/favicon.ico`
+- `app/icon.png`
+- `app/apple-icon.png`
+
+The uploaded image is a square icon asset and contains visible watermarking, so no dedicated Open Graph image is configured yet. A larger clean social preview can be added later as `app/opengraph-image.png` and `app/twitter-image.png`.
+
+## Deployment Checks
+
+Before deploying:
+
+```bash
+npm run lint
+npm run build
+```
+
+Verify after deployment:
+
+- Browser tab title shows `تلاوة`.
+- Favicon appears next to the site title.
+- `/sitemap.xml` is reachable.
+- `/robots.txt` is reachable and references the sitemap.
+- `/privacy` is reachable.
+- Quran reader rendering, page flip/navigation, Tafsir/audio, and Supabase auth behavior are unchanged.
