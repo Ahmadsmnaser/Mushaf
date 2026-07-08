@@ -28,7 +28,7 @@ function Row({
 
 /**
  * Reading panel: a left drawer opened from the toolbar. Sections: index,
- * bookmarks, theme, reading settings. Kept mounted (translated off-canvas)
+ * notes/marks, theme, reading settings. Kept mounted (translated off-canvas)
  * so the slide animates both ways; the backdrop fades with it.
  */
 export default function ReaderSidePanel({
@@ -36,7 +36,8 @@ export default function ReaderSidePanel({
   onClose,
   onOpenIndex,
   onOpenBookmarks,
-  bookmarkCount,
+  onOpenTafsir,
+  marksCount,
   readerTheme,
   onReaderThemeChange,
   mushafStyle,
@@ -52,7 +53,8 @@ export default function ReaderSidePanel({
   onClose: () => void;
   onOpenIndex: () => void;
   onOpenBookmarks: () => void;
-  bookmarkCount: number;
+  onOpenTafsir: () => void;
+  marksCount: number;
   readerTheme: ReaderTheme;
   onReaderThemeChange: (t: ReaderTheme) => void;
   mushafStyle: MushafStyle;
@@ -113,10 +115,15 @@ export default function ReaderSidePanel({
         </section>
 
         <section>
-          <h3 className="mb-1.5 font-display text-[17px] text-accent">العلامات</h3>
+          <h3 className="mb-1.5 font-display text-[17px] text-accent">التفسير</h3>
+          <Row label="تفسير الصفحة الحالية" onClick={onOpenTafsir} />
+        </section>
+
+        <section>
+          <h3 className="mb-1.5 font-display text-[17px] text-accent">العلامات والملاحظات</h3>
           <Row
-            label="عرض العلامات"
-            sub={bookmarkCount > 0 ? `${arNum(bookmarkCount)} محفوظة` : "لا شيء بعد"}
+            label="عرض العلامات والملاحظات"
+            sub={marksCount > 0 ? `${arNum(marksCount)} محفوظة` : "لا شيء بعد"}
             onClick={onOpenBookmarks}
           />
         </section>

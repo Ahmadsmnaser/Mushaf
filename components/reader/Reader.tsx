@@ -3,18 +3,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { clampPage, getPageMeta, PAGE_COUNT } from "@/lib/mushaf/source";
 import { saveLastRead } from "@/lib/useLastRead";
-import { useBookmarks } from "@/lib/useBookmarks";
+import { useMarks } from "@/lib/useMarks";
 import { useReaderSettings } from "@/lib/readerSettings";
 import { useAutoHideToolbar } from "@/lib/useAutoHideToolbar";
 import { usePagePreload } from "@/lib/usePagePreload";
 import { useMushafState } from "@/lib/useMushafState";
+import { useQuranAudio } from "@/lib/audio/useQuranAudio";
 import ReaderToolbar from "@/components/chrome/ReaderToolbar";
 import QuickJumpModal from "@/components/chrome/QuickJumpModal";
-import BookmarksPanel from "@/components/chrome/BookmarksPanel";
+import MarksPanel from "@/components/chrome/MarksPanel";
 import ReaderSidePanel from "@/components/chrome/ReaderSidePanel";
 import BookFrame from "./BookFrame";
 import ClosedMushafCover from "./ClosedMushafCover";
 import PageImage from "./PageImage";
+import TafsirPanel from "./TafsirPanel";
+import AudioMiniBar from "./AudioMiniBar";
 
 const FLIP_MS = 560;
 const ZOOM_STEPS = [1, 1.25, 1.5, 2] as const;
@@ -103,12 +106,31 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   const [jumpOpen, setJumpOpen] = useState(false);
   const [marksOpen, setMarksOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [tafsirOpen, setTafsirOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Recitation player, shared by the tafsir panel and the floating mini-bar.
+  // It deliberately survives closing the tafsir drawer; shutting the book's
+  // cover is what silences it.
+  const audio = useQuranAudio();
+  const { stop: stopAudio } = audio;
+  useEffect(() => {
+    if (!mushaf.isOpen) stopAudio();
+  }, [mushaf.isOpen, stopAudio]);
 
   const [readerSettings, setReaderSettings] = useReaderSettings();
   const { readerTheme, mushafStyle } = readerSettings;
   const idle = useAutoHideToolbar(5000);
-  const { bookmarks, isBookmarked, toggle, remove, setNote } = useBookmarks();
+  const {
+    marks,
+    addMark,
+    updateMark,
+    removeMark,
+    isPageBookmarked,
+    togglePageBookmark,
+    exportStorage,
+    importStorage,
+  } = useMarks();
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<HTMLDivElement>(null);
@@ -122,6 +144,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   const singleRef = useRef(single);
   const modalOpenRef = useRef(false);
   const panelOpenRef = useRef(false);
+  const tafsirOpenRef = useRef(false);
 
   useEffect(() => {
     pageRef.current = page;
@@ -147,6 +170,10 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   useEffect(() => {
     panelOpenRef.current = panelOpen;
   }, [panelOpen]);
+
+  useEffect(() => {
+    tafsirOpenRef.current = tafsirOpen;
+  }, [tafsirOpen]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 899px)");
@@ -187,6 +214,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   const closeBook = useCallback(
     (side: "start" | "end") => {
       setPanelOpen(false);
+      setTafsirOpen(false);
       setJumpOpen(false);
       setMarksOpen(false);
       mushaf.close(side);
@@ -384,7 +412,10 @@ export default function Reader({ initialPage }: { initialPage: number }) {
     else void document.documentElement.requestFullscreen().catch(() => {});
   }, []);
 
-  const toggleBookmark = useCallback(() => toggle(pageRef.current), [toggle]);
+  const toggleBookmark = useCallback(
+    () => togglePageBookmark(pageRef.current),
+    [togglePageBookmark]
+  );
 
   // Keyboard. RTL book: advancing moves rightward, so ArrowRight = next and
   // ArrowLeft = previous; Space also advances. Ctrl/Cmd+K = quick jump,
@@ -415,6 +446,10 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         setPanelOpen(false);
         return;
       }
+      if (e.key === "Escape" && tafsirOpenRef.current && !modalOpenRef.current) {
+        setTafsirOpen(false);
+        return;
+      }
       if (isTypingTarget(e.target))
         return;
       if (modalOpenRef.current) return; // modals own their keys (incl. Escape)
@@ -440,6 +475,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         fadeRef.current ||
         modalOpenRef.current ||
         panelOpenRef.current ||
+        tafsirOpenRef.current || // wheel scrolls the tafsir text, not the book
         !mushafOpenRef.current ||
         wheelUnlockRef.current !== null ||
         Math.abs(e.deltaY) < WHEEL_THRESHOLD
@@ -597,20 +633,33 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         side="right"
         label="الصفحة السابقة"
         onClick={() => navigateByIntent(NAVIGATION.rightButton)}
-        idle={idle && !jumpOpen && !marksOpen && !panelOpen}
+        idle={idle && !jumpOpen && !marksOpen && !panelOpen && !tafsirOpen}
         hidden={!mushaf.isOpen}
       />
       <NavZone
         side="left"
         label="الصفحة التالية"
         onClick={() => navigateByIntent(NAVIGATION.leftButton)}
-        idle={idle && !jumpOpen && !marksOpen && !panelOpen}
+        idle={idle && !jumpOpen && !marksOpen && !panelOpen && !tafsirOpen}
         hidden={!mushaf.isOpen}
       />
 
       <div ref={scrollRef} className="h-full w-full overflow-auto">
         <div className="flex min-h-full min-w-full">
-          <div className="m-auto py-[3.5svh]" style={{ width: bookWidth }}>
+          {/* The spread reacts to the cover: recedes as the book closes over
+              it, eases back as it opens. Safe here — flips can't run while
+              the mushaf isn't open, so this filter never wraps a live 3D
+              leaf (the mirrored-Quran gotcha). */}
+          <div
+            className={`m-auto py-[3.5svh] ${
+              mushaf.cover === "closing"
+                ? "spread-recede"
+                : mushaf.cover === "opening"
+                  ? "spread-return"
+                  : ""
+            }`}
+            style={{ width: bookWidth }}
+          >
             {single ? (
               <BookFrame aspectRatio="622 / 917">
                 <div ref={bookRef} className="absolute inset-0">
@@ -633,7 +682,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
                       </div>
                     </div>
                   </div>
-                  {isBookmarked(page) && <Ribbon style={{ right: "9%" }} />}
+                  {isPageBookmarked(page) && <Ribbon style={{ right: "9%" }} />}
                   {/* RTL: the next leaf is grabbed at the LEFT edge and pulled right */}
                   <DragStrip side="left" onDown={startDrag("next")} onMove={moveDrag} onUp={endDrag} />
                   <DragStrip side="right" onDown={startDrag("prev")} onMove={moveDrag} onUp={endDrag} />
@@ -676,8 +725,8 @@ export default function Reader({ initialPage }: { initialPage: number }) {
                     </div>
                   )}
                   {/* bookmark ribbons on the settled spread */}
-                  {isBookmarked(s) && <Ribbon style={{ right: "9%" }} />}
-                  {isBookmarked(s + 1) && <Ribbon style={{ left: "9%" }} />}
+                  {isPageBookmarked(s) && <Ribbon style={{ right: "9%" }} />}
+                  {isPageBookmarked(s + 1) && <Ribbon style={{ left: "9%" }} />}
                   {/* RTL: the next leaf is grabbed at the LEFT edge and pulled right */}
                   <DragStrip side="left" onDown={startDrag("next")} onMove={moveDrag} onUp={endDrag} />
                   <DragStrip side="right" onDown={startDrag("prev")} onMove={moveDrag} onUp={endDrag} />
@@ -704,7 +753,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
       {!mushaf.isSettledClosed && (
         <>
       <ReaderToolbar
-        idle={idle && !jumpOpen && !marksOpen && !panelOpen}
+        idle={idle && !jumpOpen && !marksOpen && !panelOpen && !tafsirOpen}
         hidden={!mushaf.isOpen}
         caption={
           <>
@@ -734,7 +783,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         captionLabel={toolbarCaptionLabel}
         onPrev={navigatePrevious}
         onNext={navigateNext}
-        bookmarked={isBookmarked(page)}
+        bookmarked={isPageBookmarked(page)}
         onToggleBookmark={toggleBookmark}
         onOpenJump={() => setJumpOpen(true)}
         zoom={zoom}
@@ -746,7 +795,17 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         isFullscreen={isFullscreen}
         onToggleFullscreen={toggleFullscreen}
         onOpenPanel={() => setPanelOpen(true)}
+        onOpenTafsir={() => setTafsirOpen((o) => !o)}
       />
+
+      <TafsirPanel
+        open={tafsirOpen}
+        onClose={() => setTafsirOpen(false)}
+        pages={single ? [page] : [s, s + 1]}
+        audio={audio}
+      />
+
+      <AudioMiniBar audio={audio} />
 
       <ReaderSidePanel
         open={panelOpen}
@@ -759,7 +818,11 @@ export default function Reader({ initialPage }: { initialPage: number }) {
           setPanelOpen(false);
           setMarksOpen(true);
         }}
-        bookmarkCount={bookmarks.length}
+        onOpenTafsir={() => {
+          setPanelOpen(false);
+          setTafsirOpen(true);
+        }}
+        marksCount={marks.length}
         readerTheme={readerTheme}
         onReaderThemeChange={(nextTheme) =>
           setReaderSettings({ readerTheme: nextTheme })
@@ -781,13 +844,19 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         onClose={() => setJumpOpen(false)}
         onSelect={jumpTo}
       />
-      <BookmarksPanel
+      <MarksPanel
         open={marksOpen}
         onClose={() => setMarksOpen(false)}
-        bookmarks={bookmarks}
+        marks={marks}
+        currentPage={page}
         onGo={jumpTo}
-        onRemove={remove}
-        onSetNote={setNote}
+        onAddMark={addMark}
+        onUpdateMark={updateMark}
+        onRemoveMark={removeMark}
+        onTogglePageBookmark={togglePageBookmark}
+        isPageBookmarked={isPageBookmarked}
+        exportStorage={exportStorage}
+        importStorage={importStorage}
       />
         </>
       )}

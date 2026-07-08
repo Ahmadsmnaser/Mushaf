@@ -4,9 +4,10 @@
 // Sources (verified 2026-07-04, see PLAN.md §1):
 //   - Page images: KSU "Ayat" Madani 604-page set, downloaded once by
 //     scripts/fetch-pages.mjs and self-hosted under /public/pages/.
-//   - Metadata + ayah text: api.alquran.cloud quran-simple edition, baked at
-//     build time by scripts/build-data.mjs into data/indexes.json (imported
-//     statically) and /public/data/search-index.json (lazy-loaded on first search).
+//   - Metadata + ayah text: QUL JSON resources, baked at build time by
+//     scripts/build-data.mjs into data/indexes.json (imported statically),
+//     /public/data/search-index.json (lazy-loaded on first search), and
+//     /public/data/page-ayaat/{page}.json (lazy-loaded by page).
 //
 // TODO(v2): word-level highlighting or cross-device sync would need
 // apis.quran.foundation (OAuth). Route it through a Next.js API-route proxy so
@@ -58,6 +59,13 @@ export interface SearchResult {
   ayahNo: number;
   page: number;
   snippet: string;
+}
+
+export interface PageAyah {
+  verseKey: string;
+  surah: number;
+  ayah: number;
+  text: string;
 }
 
 export function clampPage(n: number): number {
@@ -163,4 +171,30 @@ export async function search(query: string): Promise<SearchResult[]> {
     if (results.length >= MAX_RESULTS) break;
   }
   return results;
+}
+
+const pageAyahPromises = new Map<number, Promise<PageAyah[]>>();
+
+export async function getPageAyahs(pageNumber: number): Promise<PageAyah[]> {
+  const n = clampPage(pageNumber);
+  if (!pageAyahPromises.has(n)) {
+    const file = String(n).padStart(3, "0");
+    pageAyahPromises.set(
+      n,
+      fetch(`/data/page-ayaat/${file}.json`)
+        .then(async (res) => {
+          if (!res.ok) throw new Error(`page ayahs fetch failed: HTTP ${res.status}`);
+          const data: { ayahs?: PageAyah[] } = await res.json();
+          if (!Array.isArray(data.ayahs)) {
+            throw new Error(`page ayahs ${file}.json has an invalid shape`);
+          }
+          return data.ayahs;
+        })
+        .catch((err) => {
+          pageAyahPromises.delete(n);
+          throw err;
+        })
+    );
+  }
+  return pageAyahPromises.get(n)!;
 }

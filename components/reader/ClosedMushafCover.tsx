@@ -1,17 +1,21 @@
 "use client";
 
 /**
- * The closed mushaf: a premium green leather cover, rendered INSTEAD of the
- * open spread once settled (Reader unmounts the spread), and briefly over it
- * mid-swing. Mounted fresh for each close/open cycle, so the CSS keyframe
- * animations always start clean:
+ * The closed mushaf: ONE solid book — a leather cover overhanging its page
+ * block, a single smooth gilt fore-edge on the side opposite the spine, a
+ * darker board peeking below for thickness, and a soft contact shadow
+ * grounding it. Rendered INSTEAD of the open spread once settled (Reader
+ * unmounts the spread), and briefly over it mid-transition. Mounted fresh
+ * for each close/open cycle, so the CSS keyframe animations start clean:
  *
- *   closing — the canvas fades in fast while the cover door swings shut
- *   closed  — the settled cover alone; the only interactive surface
- *   opening — the door swings open first, then the canvas fades away to
+ *   closing — the canvas fades in while the whole book settles into place
+ *             (a hint of hinge rotation + scale) and its shadow lands
+ *   closed  — the settled book alone; the only interactive surface
+ *   opening — the book lifts away first, then the canvas fades out to
  *             reveal the spread waiting behind it
  *
- * Under the door sits a bare flyleaf — never Quran page imagery.
+ * `side` mirrors the geometry: closed-from-start puts the spine on the
+ * RIGHT (an Arabic book's front cover), closed-from-end on the LEFT.
  */
 export default function ClosedMushafCover({
   phase,
@@ -23,17 +27,23 @@ export default function ClosedMushafCover({
   onOpen: () => void;
 }) {
   const interactive = phase === "closed";
+  const spineRight = side === "start";
+  const foreSide = spineRight ? "left" : "right";
+  // Spine corners round wide (the leather wraps the binding); fore-edge
+  // corners stay tight. border-radius order: TL TR BR BL.
+  const radius = spineRight ? "7px 16px 16px 7px" : "16px 7px 7px 16px";
+
   const overlayClass =
     phase === "opening"
       ? "cover-overlay-leave opacity-0"
       : phase === "closing"
         ? "cover-overlay-enter opacity-100"
         : "opacity-100";
-  const doorClass =
+  const bookClass =
     phase === "opening"
-      ? "door-swing-open"
+      ? "book-lift-out"
       : phase === "closing"
-        ? "door-swing-shut"
+        ? "book-settle-in"
         : "";
 
   return (
@@ -43,64 +53,69 @@ export default function ClosedMushafCover({
       aria-label="المصحف مغلق"
     >
       <div
-        className="relative w-[min(72vw,84svh*0.678)] [perspective:2400px] sm:w-[min(46vw,84svh*0.678)]"
-        style={{ aspectRatio: "622 / 917" }}
+        className={`relative w-[min(72vw,84svh*0.678)] sm:w-[min(46vw,84svh*0.678)] ${bookClass}`}
+        style={{
+          aspectRatio: "622 / 917",
+          transformOrigin: spineRight ? "right center" : "left center",
+          ["--hinge-deg" as string]: spineRight ? "-7deg" : "7deg",
+        }}
       >
-        {/* the closed page block: a bare flyleaf and gilt edges — no Quran content */}
-        <div aria-hidden className="closed-paper absolute inset-0" />
+        {/* soft contact shadow where the book meets the surface */}
+        <div aria-hidden className="cover-desk-shadow" />
+
+        {/* the back board, offset a touch down and toward the fore-edge —
+            the book's thickness read at its silhouette */}
         <div
           aria-hidden
-          className="page-edges page-edges-left absolute"
-          style={{ top: "2%", bottom: "1.5%", left: -9, width: 9 }}
-        />
-        <div
-          aria-hidden
-          className="page-edges page-edges-right absolute"
-          style={{ top: "2%", bottom: "1.5%", right: -9, width: 9 }}
+          className="cover-board-under absolute inset-0"
+          style={{
+            borderRadius: radius,
+            transform: `translate(${spineRight ? "-2px" : "2px"}, 3.5px)`,
+          }}
         />
 
-        {/* the cover as a door hinged at the spine; two faces so the swing
-            stays visible through the whole turn */}
+        {/* the closed page block seen edge-on: one smooth gilt surface under
+            the cover's overhang — never stripes, never Quran content */}
+        <div
+          aria-hidden
+          className={`fore-edge fore-edge-${foreSide} absolute`}
+          style={{ top: "2%", bottom: "1.6%", [foreSide]: "-1.5%", width: "1.5%" }}
+        />
+
+        {/* the cover itself — the whole board is the reopen affordance */}
         <button
           onClick={onOpen}
           aria-label="افتح المصحف"
           tabIndex={interactive ? 0 : -1}
-          className={`cover-door-shell absolute inset-0 cursor-pointer rounded-[10px] border-0 bg-transparent p-0 ${doorClass}`}
-          style={{
-            ["--door-deg" as string]: side === "start" ? "-108deg" : "108deg",
-            transformOrigin: side === "start" ? "right center" : "left center",
-            transform:
-              phase === "opening" ? "rotateY(var(--door-deg))" : "rotateY(0deg)",
-          }}
+          className="cover-door absolute inset-0 flex cursor-pointer items-center justify-center overflow-hidden border-0 p-0"
+          style={{ borderRadius: radius }}
         >
-          <span className="cover-door absolute inset-0 flex items-center justify-center overflow-hidden rounded-[10px] [backface-visibility:hidden]">
-            <span aria-hidden className="cover-door-ring" />
-            <span className="relative flex flex-col items-center gap-3.5 p-6 text-center">
-              <span
-                aria-hidden
-                className="text-sm tracking-[0.3em] text-gold-soft/80"
-              >
-                ◆ ❖ ◆
-              </span>
-              <span
-                className="font-display font-bold leading-none text-gold-soft"
-                style={{ fontSize: "clamp(38px, 7vw, 72px)" }}
-              >
-                المصحف
-              </span>
-              <span
-                className="font-display text-gold-soft/80"
-                style={{ fontSize: "clamp(13px, 1.8vw, 18px)" }}
-              >
-                مصحف المدينة النبوية
-              </span>
-              <span aria-hidden className="mt-1.5 h-px w-16 bg-gold-soft/55" />
-            </span>
-          </span>
           <span
             aria-hidden
-            className="cover-door-back absolute inset-0 rounded-[10px] [backface-visibility:hidden] [transform:rotateY(180deg)]"
+            className={`cover-spine-hint cover-spine-hint-${spineRight ? "right" : "left"}`}
           />
+          <span aria-hidden className="cover-door-ring" />
+          <span className="relative flex flex-col items-center gap-3.5 p-6 text-center">
+            <span
+              aria-hidden
+              className="text-sm tracking-[0.3em] text-gold-soft/80"
+            >
+              ◆ ❖ ◆
+            </span>
+            <span
+              className="font-display font-bold leading-none text-gold-soft"
+              style={{ fontSize: "clamp(38px, 7vw, 72px)" }}
+            >
+              المصحف
+            </span>
+            <span
+              className="font-display text-gold-soft/80"
+              style={{ fontSize: "clamp(13px, 1.8vw, 18px)" }}
+            >
+              مصحف المدينة النبوية
+            </span>
+            <span aria-hidden className="mt-1.5 h-px w-16 bg-gold-soft/55" />
+          </span>
         </button>
       </div>
 

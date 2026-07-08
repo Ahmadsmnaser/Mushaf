@@ -25,6 +25,7 @@ export function writeJSON(key: string, value: unknown): void {
 export const KEYS = {
   lastPage: "mushaf.v1.lastPage",
   bookmarks: "mushaf.v1.bookmarks",
+  marks: "mushaf.v1.marks",
   theme: "mushaf.v1.theme",
   readerTheme: "mushaf.v2.readerTheme",
   mushafStyle: "mushaf.v2.mushafStyle",

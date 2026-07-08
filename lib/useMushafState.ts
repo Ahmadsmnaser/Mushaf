@@ -15,11 +15,12 @@ export type MushafPhase =
   | `closed-from-${MushafSide}`
   | `opening-from-${MushafSide}`;
 
-// Timer lengths cover the CSS choreography (globals.css): closing = 620ms
-// door swing over a 260ms canvas fade-in; opening = 560ms swing, then a
-// 300ms canvas fade delayed 480ms so the cover finishes before the reveal.
-const CLOSING_MS = 700;
-const OPENING_MS = 820;
+// Timer lengths cover the CSS choreography (globals.css): closing = 480ms
+// book settle + 540ms shadow landing over a 240ms canvas fade-in; opening =
+// 320ms book lift, then a 280ms canvas fade delayed 200ms (ends 480ms)
+// while the spread eases back behind it.
+const CLOSING_MS = 580;
+const OPENING_MS = 540;
 
 const prefersReducedMotion = () =>
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;

@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { clampPage, getPageMeta, PAGE_COUNT } from "@/lib/mushaf/source";
 import { useLastRead } from "@/lib/useLastRead";
-import { useBookmarks } from "@/lib/useBookmarks";
-import BookmarksPanel from "@/components/chrome/BookmarksPanel";
+import { useMarks } from "@/lib/useMarks";
+import MarksPanel from "@/components/chrome/MarksPanel";
 
 const arNum = (n: number) => n.toLocaleString("ar-EG");
 
@@ -17,7 +17,14 @@ const arNum = (n: number) => n.toLocaleString("ar-EG");
 export default function Home() {
   const router = useRouter();
   const lastRead = useLastRead();
-  const { bookmarks, remove, setNote } = useBookmarks();
+  const {
+    marks,
+    addMark,
+    updateMark,
+    removeMark,
+    exportStorage,
+    importStorage,
+  } = useMarks();
   const [marksOpen, setMarksOpen] = useState(false);
   const [pageInput, setPageInput] = useState("");
 
@@ -33,21 +40,17 @@ export default function Home() {
         <div className="w-full max-w-2xl">
           {/* tooled double frame, like the stamped border of the cover */}
           <div className="rounded-lg border border-gold-soft/45 p-2">
-            <div className="rounded-md border border-gold-soft/25 px-5 py-10 text-center sm:px-14 sm:py-14">
-              <p className="mb-4 text-sm tracking-wide text-gold-soft/80">
-                مصحف المدينة النبوية
+            <div className="rounded-md border border-gold-soft/25 px-5 py-9 text-center sm:px-14 sm:py-12">
+              <p className="mx-auto max-w-xl font-display text-[2rem] font-bold leading-[1.75] text-gold-soft sm:text-[2.65rem] sm:leading-[1.65]">
+                {"إِنَّا نَحْنُ نَزَّلْنَا الذِّكْرَ وَإِنَّا لَهُ لَحَافِظُونَ"}
               </p>
-              <h1 className="font-display text-6xl font-bold text-gold-soft sm:text-7xl">
+              {/* <h1 className="mt-5 font-display text-5xl font-bold text-gold-soft sm:text-6xl">
                 المصحف
-              </h1>
-              <p className="mx-auto mt-5 max-w-md text-sm leading-7 text-paper/85">
-                اقرأ كما تقرأ من المصحف الورقي: صفحتان متقابلتان، وتقليبٌ
-                كالورق، لا شيء يشغلك عن الآيات.
-              </p>
+              </h1> */}
 
               <Link
                 href={`/page/${lastRead ?? 1}`}
-                className="mt-8 inline-flex items-baseline gap-3 rounded-full bg-paper px-8 py-3 text-ink shadow-lg transition-transform hover:scale-[1.02]"
+                className="mt-7 inline-flex items-baseline gap-3 rounded-full bg-paper px-8 py-3 text-ink shadow-lg transition-transform hover:scale-[1.02]"
               >
                 <span className="font-medium">
                   {lastRead ? "متابعة القراءة" : "ابدأ القراءة"}
@@ -58,13 +61,24 @@ export default function Home() {
                     : "من الفاتحة"}
                 </span>
               </Link>
+              <p className="mt-3 text-sm tracking-wide text-gold-soft/80">
 
-              <div className="mt-10 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                
+              </p>
+              <p className="mt-3 text-sm tracking-wide text-gold-soft/80">
+                مصحف المدينة النبوية
+              </p>
+              <p className="mx-auto mt-4 max-w-md text-sm leading-7 text-paper/85">
+                اقرأ كما تقرأ من المصحف
+              </p>
+
+
+              <div className="mt-9 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
                 <CoverCard href="/page/1" title="الصفحة الأولى" sub="الفاتحة" />
                 <CoverCard
                   onClick={() => setMarksOpen(true)}
-                  title="العلامات"
-                  sub={bookmarks.length > 0 ? `${arNum(bookmarks.length)} محفوظة` : "لا شيء بعد"}
+                  title="العلامات والملاحظات"
+                  sub={marks.length > 0 ? `${arNum(marks.length)} محفوظة` : "لا شيء بعد"}
                 />
                 <CoverCard
                   onClick={() =>
@@ -103,19 +117,22 @@ export default function Home() {
             </div>
           </div>
 
-          <p className="mt-5 text-center text-xs text-gold-soft/60">
-            مصحف المدينة — {arNum(PAGE_COUNT)} صفحة · تُحفظ علاماتك وموضع قراءتك على هذا الجهاز
+          <p className="mt-5 text-center text-xs tracking-wide text-gold-soft/55">
+            مخصص للحواسيب والشاشات الكبيرة
           </p>
         </div>
       </div>
 
-      <BookmarksPanel
+      <MarksPanel
         open={marksOpen}
         onClose={() => setMarksOpen(false)}
-        bookmarks={bookmarks}
+        marks={marks}
         onGo={(p) => router.push(`/page/${p}`)}
-        onRemove={remove}
-        onSetNote={setNote}
+        onAddMark={addMark}
+        onUpdateMark={updateMark}
+        onRemoveMark={removeMark}
+        exportStorage={exportStorage}
+        importStorage={importStorage}
       />
     </main>
   );

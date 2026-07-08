@@ -27,6 +27,8 @@ const paths = {
   chevLeft: "M15 6l-6 6 6 6",
   bookmark: "M7 3h10v18l-5-4-5 4z",
   list: "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01",
+  bookOpen:
+    "M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z",
   minus: "M6 12h12",
   plus: "M12 6v12M6 12h12",
   expand: "M8 4H4v4M16 4h4v4M8 20H4v-4M16 20h4v-4",
@@ -93,6 +95,7 @@ export default function ReaderToolbar({
   isFullscreen,
   onToggleFullscreen,
   onOpenPanel,
+  onOpenTafsir,
 }: {
   idle: boolean;
   hidden?: boolean;
@@ -112,6 +115,7 @@ export default function ReaderToolbar({
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
   onOpenPanel: () => void;
+  onOpenTafsir: () => void;
 }) {
   return (
     <div
@@ -177,6 +181,10 @@ export default function ReaderToolbar({
           >
             <path d={paths.bookmark} />
           </svg>
+        </ToolButton>
+
+        <ToolButton label="التفسير" onClick={onOpenTafsir}>
+          <Icon d={paths.bookOpen} />
         </ToolButton>
 
         <ToolButton label="لوحة القراءة" onClick={onOpenPanel}>

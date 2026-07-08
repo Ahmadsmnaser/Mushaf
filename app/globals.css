@@ -116,34 +116,34 @@ body {
 }
 
 /*
- * The gilded page-block edges (the design's signature): closed pages stacked
- * against each side of the open spread. Fine vertical lines read as paper
- * edges; the outer hairline is the gilding. Their widths encode the reader's
- * real position in the 604 pages, so the block migrates from right to left
- * as reading progresses — matching the flip direction.
+ * The closed book's fore-edge: the page block seen edge-on where the cover's
+ * overhang ends. ONE smooth gilt-cream surface — never countable stripes —
+ * shaded darker where the cover shadows it and warming to gilt at the outer
+ * lip. Colors derive from the paper and gold tokens so every theme keeps a
+ * coherent book.
  */
-.page-edges {
-  background: repeating-linear-gradient(
-    90deg,
-    #faf4e3 0px,
-    #faf4e3 1.5px,
-    #b3a37e 1.5px,
-    #b3a37e 2.5px
-  );
-  transition: width 600ms ease;
+.fore-edge {
+  --edge-paper: color-mix(in srgb, var(--mushaf-paper) 84%, var(--gold));
+  --edge-gilt: color-mix(in srgb, var(--mushaf-paper) 52%, var(--gold));
+  pointer-events: none;
 }
 
-.page-edges-right {
-  border-left: none;
-  border-right: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
-  border-radius: 0 2px 2px 0;
-  box-shadow: 6px 8px 18px -8px rgba(52, 42, 22, 0.35);
-}
-
-.page-edges-left {
+.fore-edge-left {
+  background:
+    linear-gradient(to bottom, rgba(58, 44, 20, 0.2), transparent 9%, transparent 91%, rgba(58, 44, 20, 0.24)),
+    linear-gradient(to left, rgba(58, 44, 20, 0.26), transparent 45%),
+    linear-gradient(to left, var(--edge-paper), var(--edge-gilt));
   border-left: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
   border-radius: 2px 0 0 2px;
-  box-shadow: -6px 8px 18px -8px rgba(52, 42, 22, 0.35);
+}
+
+.fore-edge-right {
+  background:
+    linear-gradient(to bottom, rgba(58, 44, 20, 0.2), transparent 9%, transparent 91%, rgba(58, 44, 20, 0.24)),
+    linear-gradient(to right, rgba(58, 44, 20, 0.26), transparent 45%),
+    linear-gradient(to right, var(--edge-paper), var(--edge-gilt));
+  border-right: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
+  border-radius: 0 2px 2px 0;
 }
 
 /*
@@ -763,9 +763,11 @@ body {
  * keyframe animations (fill: both) carry each phase's journey, and the
  * element's own styles hold that phase's END state.
  *
- *   closing — canvas fades in fast (260ms) while the door swings shut (620ms)
- *   opening — door swings open (560ms), THEN the canvas fades out (300ms,
- *             delayed 480ms) to reveal the spread waiting behind it
+ * Staged settle, not page physics — the whole book moves as ONE object:
+ *   closing — canvas fades in (240ms) while the book settles into place
+ *             (hinge-hint rotate + scale, 480ms) and its shadow lands
+ *   opening — the book lifts away (320ms), then the canvas fades out
+ *             (280ms, delayed 200ms) over the returning spread
  */
 .cover-overlay {
   background:
@@ -786,40 +788,113 @@ body {
 }
 
 .cover-overlay-enter {
-  animation: cover-fade-in 260ms ease both;
+  animation: cover-fade-in 240ms ease both;
 }
 
 .cover-overlay-leave {
-  animation: cover-fade-out 300ms ease 480ms both;
+  animation: cover-fade-out 280ms ease 200ms both;
 }
 
-/* The door hinges at the spine; --door-deg is set per side (∓108°). */
-.cover-door-shell {
-  transform-style: preserve-3d;
-  will-change: transform;
-}
-
-@keyframes door-shut {
+/* The book settling shut: a hint of rotation from the spine (—hinge-deg is
+   set per side, ∓7°), never a flying door. */
+@keyframes mushaf-settle {
   from {
-    transform: rotateY(var(--door-deg));
+    opacity: 0;
+    transform: perspective(1600px) rotateY(var(--hinge-deg)) translateY(-10px)
+      scale(1.04);
+  }
+  55% {
+    opacity: 1;
+  }
+  to {
+    transform: perspective(1600px) rotateY(0deg) translateY(0) scale(1);
   }
 }
 
-@keyframes door-open {
+@keyframes mushaf-lift {
   from {
-    transform: rotateY(0deg);
+    opacity: 1;
+    transform: perspective(1600px) rotateY(0deg) translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: perspective(1600px) rotateY(var(--hinge-deg)) translateY(-8px)
+      scale(1.035);
   }
 }
 
-.door-swing-shut {
-  animation: door-shut 620ms cubic-bezier(0.2, 0.5, 0.2, 1) both;
+.book-settle-in {
+  animation: mushaf-settle 480ms cubic-bezier(0.2, 0.6, 0.2, 1) both;
 }
 
-.door-swing-open {
-  animation: door-open 560ms cubic-bezier(0.2, 0.5, 0.2, 1) both;
+.book-lift-out {
+  animation: mushaf-lift 320ms cubic-bezier(0.4, 0.1, 0.6, 1) both;
 }
 
-/* Front face: the tooled leather with the title. */
+/* The contact shadow lands a beat after the book (the "thump"), and lets go
+   first when it lifts. */
+.cover-desk-shadow {
+  position: absolute;
+  left: 5%;
+  right: 5%;
+  bottom: -3.5%;
+  height: 9%;
+  background: radial-gradient(
+    ellipse 50% 50% at 50% 50%,
+    var(--mushaf-desk-shadow),
+    transparent 70%
+  );
+  pointer-events: none;
+}
+
+@keyframes shadow-settle {
+  from {
+    opacity: 0;
+    transform: scaleX(1.14);
+  }
+}
+
+@keyframes shadow-lift {
+  to {
+    opacity: 0;
+    transform: scaleX(1.1);
+  }
+}
+
+.book-settle-in .cover-desk-shadow {
+  animation: shadow-settle 540ms ease both;
+}
+
+.book-lift-out .cover-desk-shadow {
+  animation: shadow-lift 240ms ease both;
+}
+
+/* The open spread reacting to the cover: recede while closing, ease back
+   while opening. Applied only mid-transition (never during a page flip). */
+@keyframes spread-recede {
+  to {
+    transform: scale(0.972);
+    filter: brightness(0.94);
+  }
+}
+
+@keyframes spread-return {
+  from {
+    transform: scale(0.972);
+    filter: brightness(0.94);
+  }
+}
+
+.spread-recede {
+  animation: spread-recede 260ms ease both;
+}
+
+.spread-return {
+  animation: spread-return 480ms cubic-bezier(0.2, 0.6, 0.2, 1) both;
+}
+
+/* The cover: tooled leather with the title, one soft grounded shadow (the
+   desk ellipse below does the rest — competing shadows read as UI pieces). */
 .cover-door {
   background:
     radial-gradient(130% 90% at 30% -5%, rgba(255, 255, 255, 0.14), transparent 55%),
@@ -833,32 +908,48 @@ body {
   background-repeat: no-repeat, repeat, no-repeat;
   background-size: cover, 120px 120px, cover;
   box-shadow:
-    0 54px 96px -30px rgba(20, 14, 4, 0.62),
-    inset 0 2px 0 rgba(255, 255, 255, 0.16),
-    inset 0 -4px 8px rgba(0, 0, 0, 0.42),
+    0 20px 44px -20px rgba(20, 14, 4, 0.5),
+    inset 0 2px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -3px 7px rgba(0, 0, 0, 0.36),
     inset 0 0 0 1px color-mix(in srgb, var(--gold-soft) 34%, transparent);
 }
 
-/* Back face: plain leather, visible mid-swing so the cover never vanishes. */
-.cover-door-back {
-  background: linear-gradient(
-    202deg,
-    color-mix(in srgb, var(--cover) 82%, black) 0%,
-    color-mix(in srgb, var(--cover) 58%, black) 100%
-  );
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold-soft) 16%, transparent);
+/* The back board peeking below the cover: the book's thickness. */
+.cover-board-under {
+  background: color-mix(in srgb, var(--cover) 55%, black);
+  box-shadow: 0 2px 6px rgba(20, 14, 4, 0.35);
+  pointer-events: none;
 }
 
-/* The bare flyleaf under the cover — paper only, never Quran content. */
-.closed-paper {
-  background:
-    linear-gradient(to left, rgba(58, 44, 20, 0.05), transparent 6%),
-    linear-gradient(to right, rgba(58, 44, 20, 0.05), transparent 6%),
-    var(--mushaf-paper);
-  border-radius: 3px;
-  box-shadow:
-    inset 0 0 24px rgba(52, 42, 22, 0.1),
-    0 18px 44px -18px rgba(24, 17, 5, 0.45);
+/* The rounded spine wrap, on the hinge side of the cover face. */
+.cover-spine-hint {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 7.5%;
+  pointer-events: none;
+}
+
+.cover-spine-hint-right {
+  right: 0;
+  background: linear-gradient(
+    to left,
+    rgba(0, 0, 0, 0.3),
+    rgba(0, 0, 0, 0.12) 45%,
+    rgba(255, 255, 255, 0.05) 80%,
+    transparent
+  );
+}
+
+.cover-spine-hint-left {
+  left: 0;
+  background: linear-gradient(
+    to right,
+    rgba(0, 0, 0, 0.3),
+    rgba(0, 0, 0, 0.12) 45%,
+    rgba(255, 255, 255, 0.05) 80%,
+    transparent
+  );
 }
 
 .cover-door-ring {
@@ -883,14 +974,17 @@ body {
      skips transitional phases); kill the choreography too. */
   .cover-overlay-enter,
   .cover-overlay-leave,
-  .door-swing-shut,
-  .door-swing-open {
+  .book-settle-in,
+  .book-lift-out,
+  .book-settle-in .cover-desk-shadow,
+  .book-lift-out .cover-desk-shadow,
+  .spread-recede,
+  .spread-return {
     animation: none;
   }
   .book-enter {
     animation: none;
   }
-  .page-edges,
   .corner-hint {
     transition: none;
   }
