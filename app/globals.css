@@ -1149,140 +1149,211 @@ body {
   }
 }
 
-/*
- * Closed-book state machine visuals. The cover component mounts fresh for
- * each close/open cycle, so entering states never inherit stale transitions:
- * keyframe animations (fill: both) carry each phase's journey, and the
- * element's own styles hold that phase's END state.
- *
- * Staged settle, not page physics — the whole book moves as ONE object:
- *   closing — canvas fades in (240ms) while the book settles into place
- *             (hinge-hint rotate + scale, 480ms) and its shadow lands
- *   opening — the book lifts away (320ms), then the canvas fades out
- *             (280ms, delayed 200ms) over the returning spread
- */
-.cover-overlay {
+/* Persistent close/open layer. It is measured over the live reader spread;
+   only these few physical surfaces animate, never hundreds of page nodes. */
+.book-transition-overlay {
+  overflow: hidden;
+  pointer-events: auto;
+  perspective: 2600px;
+  perspective-origin: 50% 44%;
+}
+
+.book-transition-backdrop {
   background:
     radial-gradient(ellipse 90% 70% at 50% 40%, var(--canvas-glow), transparent 75%),
     var(--canvas);
+  will-change: opacity;
+  opacity: 0;
 }
 
-@keyframes cover-fade-in {
-  from {
-    opacity: 0;
-  }
+.book-transition-stage {
+  opacity: 0;
 }
 
-@keyframes cover-fade-out {
-  from {
-    opacity: 1;
-  }
+.book-transition-stage,
+.book-transition-root,
+.book-transition-assembly,
+.transition-moving-pages,
+.transition-front-cover {
+  transform-style: preserve-3d;
 }
 
-.cover-overlay-enter {
-  animation: cover-fade-in 240ms ease both;
+.book-transition-stage,
+.book-transition-root,
+.book-transition-assembly,
+.transition-moving-pages,
+.transition-front-cover,
+.book-transition-shadow {
+  will-change: transform, opacity;
 }
 
-.cover-overlay-leave {
-  animation: cover-fade-out 280ms ease 200ms both;
+.book-transition-root {
+  transform-origin: center center;
 }
 
-/* The book settling shut: a hint of rotation from the spine (—hinge-deg is
-   set per side, ∓7°), never a flying door. */
-@keyframes mushaf-settle {
-  from {
-    opacity: 0;
-    transform: perspective(1600px) rotateY(var(--hinge-deg)) translateY(-10px)
-      scale(1.04);
-  }
-  55% {
-    opacity: 1;
-  }
-  to {
-    transform: perspective(1600px) rotateY(0deg) translateY(0) scale(1);
-  }
-}
-
-@keyframes mushaf-lift {
-  from {
-    opacity: 1;
-    transform: perspective(1600px) rotateY(0deg) translateY(0) scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: perspective(1600px) rotateY(var(--hinge-deg)) translateY(-8px)
-      scale(1.035);
-  }
-}
-
-.book-settle-in {
-  animation: mushaf-settle 480ms cubic-bezier(0.2, 0.6, 0.2, 1) both;
-}
-
-.book-lift-out {
-  animation: mushaf-lift 320ms cubic-bezier(0.4, 0.1, 0.6, 1) both;
-}
-
-/* The contact shadow lands a beat after the book (the "thump"), and lets go
-   first when it lifts. */
-.cover-desk-shadow {
-  position: absolute;
-  left: 5%;
-  right: 5%;
-  bottom: -3.5%;
-  height: 9%;
+.book-transition-shadow {
+  right: 3%;
+  bottom: -5.2%;
+  left: 3%;
+  height: 12%;
+  transform-origin: center;
   background: radial-gradient(
     ellipse 50% 50% at 50% 50%,
     var(--mushaf-desk-shadow),
-    transparent 70%
+    transparent 72%
   );
+  filter: blur(2px);
   pointer-events: none;
 }
 
-@keyframes shadow-settle {
-  from {
-    opacity: 0;
-    transform: scaleX(1.14);
-  }
+.transition-half-left {
+  inset-block: 0;
+  left: 0;
+  width: 50%;
 }
 
-@keyframes shadow-lift {
-  to {
-    opacity: 0;
-    transform: scaleX(1.1);
-  }
+.transition-half-right {
+  inset-block: 0;
+  right: 0;
+  width: 50%;
 }
 
-.book-settle-in .cover-desk-shadow {
-  animation: shadow-settle 540ms ease both;
+.transition-half-full {
+  inset: 0;
 }
 
-.book-lift-out .cover-desk-shadow {
-  animation: shadow-lift 240ms ease both;
+.transition-moving-pages.transition-half-left,
+.transition-front-cover.transition-half-left {
+  transform-origin: right center;
 }
 
-/* The open spread reacting to the cover: recede while closing, ease back
-   while opening. Applied only mid-transition (never during a page flip). */
-@keyframes spread-recede {
-  to {
-    transform: scale(0.972);
-    filter: brightness(0.94);
-  }
+.transition-moving-pages.transition-half-right,
+.transition-front-cover.transition-half-right {
+  transform-origin: left center;
 }
 
-@keyframes spread-return {
-  from {
-    transform: scale(0.972);
-    filter: brightness(0.94);
-  }
+.book-transition-overlay[data-side="start"] .transition-half-full {
+  transform-origin: right center;
 }
 
-.spread-recede {
-  animation: spread-recede 260ms ease both;
+.book-transition-overlay[data-side="end"] .transition-half-full {
+  transform-origin: left center;
 }
 
-.spread-return {
-  animation: spread-return 480ms cubic-bezier(0.2, 0.6, 0.2, 1) both;
+.transition-back-cover {
+  z-index: 1;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--cover) 66%, black);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 3px 7px rgba(20, 14, 4, 0.28);
+  transform: translateZ(-6px) scale(1.012);
+}
+
+.transition-page-block {
+  z-index: 3;
+  overflow: visible;
+  background: var(--mushaf-paper);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--gold) 14%, transparent),
+    0 2px 5px rgba(40, 28, 8, 0.18);
+}
+
+.transition-page-block-edge {
+  position: absolute;
+  inset: 1.2%;
+  z-index: -1;
+  border: 4px solid color-mix(in srgb, var(--mushaf-paper) 62%, var(--gold));
+  border-radius: 3px;
+  box-shadow: inset 0 0 5px rgba(55, 40, 14, 0.24);
+  transform: translateZ(-4px);
+  pointer-events: none;
+}
+
+.transition-moving-pages {
+  z-index: 5;
+}
+
+.transition-page-face,
+.transition-cover-face-front,
+.transition-cover-face-back {
+  backface-visibility: hidden;
+}
+
+.transition-page-face {
+  overflow: hidden;
+  background: var(--mushaf-paper);
+  box-shadow: var(--mushaf-leaf-shadow);
+}
+
+.transition-page-face-back {
+  transform: rotateY(180deg);
+}
+
+.transition-page-back-paper,
+.transition-cover-inner {
+  border: 1px solid color-mix(in srgb, var(--gold-soft) 18%, transparent);
+  background:
+    radial-gradient(ellipse at 50% 45%, rgba(255, 255, 255, 0.08), transparent 70%),
+    color-mix(in srgb, var(--cover) 86%, var(--mushaf-paper));
+  box-shadow: inset 0 0 22px rgba(20, 14, 4, 0.18);
+}
+
+.transition-front-cover {
+  z-index: 4;
+  cursor: default;
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.transition-cover-face-front {
+  transform: rotateY(0deg);
+}
+
+.transition-cover-face-back {
+  transform: rotateY(180deg);
+}
+
+.transition-cover-art,
+.transition-cover-inner {
+  border-radius: 8px;
+}
+
+.transition-cover-thickness {
+  inset: 0 0 auto;
+  height: 5px;
+  border-radius: 8px 8px 2px 2px;
+  background: color-mix(in srgb, var(--cover) 56%, black);
+  transform: rotateX(90deg) translateZ(2px);
+  transform-origin: top;
+}
+
+.transition-open-hint {
+  top: calc(100% + 24px);
+  z-index: 20;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.transition-open-hint-left {
+  left: 0;
+  width: 50%;
+}
+
+.transition-open-hint-right {
+  right: 0;
+  width: 50%;
+}
+
+.transition-open-hint-full {
+  left: 0;
+  width: 100%;
+}
+
+.book-transition-closed .transition-front-cover,
+.book-transition-closed .transition-open-hint {
+  cursor: pointer;
+  pointer-events: auto;
 }
 
 /* The cover: tooled leather with the title, one soft grounded shadow (the
@@ -1352,6 +1423,73 @@ body {
   box-shadow: inset 0 0 0 4px color-mix(in srgb, var(--gold-soft) 12%, transparent);
 }
 
+/* Top-edge quick navigation: fixed chrome that never participates in the
+   reader's layout or changes the book geometry. */
+.quick-nav-trigger {
+  border: 0;
+  background: transparent;
+  color: var(--gold);
+  touch-action: manipulation;
+}
+
+.quick-nav-handle {
+  position: absolute;
+  top: max(4px, env(safe-area-inset-top));
+  left: 50%;
+  width: 42px;
+  height: 4px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0;
+  transform: translateX(-50%);
+}
+
+@media (hover: none), (pointer: coarse) {
+  .quick-nav-handle { opacity: 0.38; }
+}
+
+.reader-quick-nav {
+  transition:
+    opacity var(--motion-normal) var(--ease-out-soft),
+    transform var(--motion-normal) var(--ease-out-soft),
+    visibility 0s linear var(--motion-normal);
+  will-change: opacity, transform;
+}
+
+.reader-quick-nav-open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+  transition-delay: 0s;
+}
+
+.reader-quick-nav-closed {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-18px);
+  pointer-events: none;
+}
+
+.quick-nav-slider {
+  accent-color: var(--accent);
+  cursor: ew-resize;
+  direction: ltr;
+}
+
+.quick-nav-preview::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  width: 9px;
+  height: 9px;
+  border-top: 1px solid color-mix(in srgb, var(--gold) 30%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--gold) 30%, transparent);
+  background: var(--sheet);
+  transform: translate(-50%, 50%) rotate(45deg);
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* 1ms (not none) so transitionend still fires and the flip commits. */
   .leaf-move,
@@ -1360,18 +1498,6 @@ body {
     animation: none;
   }
   .leaf-lift-move {
-    animation: none;
-  }
-  /* The state machine settles instantly under reduced motion (the hook
-     skips transitional phases); kill the choreography too. */
-  .cover-overlay-enter,
-  .cover-overlay-leave,
-  .book-settle-in,
-  .book-lift-out,
-  .book-settle-in .cover-desk-shadow,
-  .book-lift-out .cover-desk-shadow,
-  .spread-recede,
-  .spread-return {
     animation: none;
   }
   .book-enter {
@@ -1384,6 +1510,11 @@ body {
     transition: opacity 120ms ease;
     transform: none !important;
   }
+  .reader-quick-nav {
+    transition: opacity 120ms ease, visibility 0s linear 120ms;
+    transform: none !important;
+  }
+  .reader-quick-nav-open { transition-delay: 0s; }
   .drawer-backdrop {
     transition: opacity 120ms ease, visibility 0s linear 120ms;
   }

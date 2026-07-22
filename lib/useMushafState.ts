@@ -1,104 +1,59 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useReducer, useRef } from "react";
+import {
+  getBookRenderPolicy,
+  INITIAL_BOOK_VISUAL_STATE,
+  reduceBookVisualState,
+  type BookVisualEvent,
+  type BookVisualState,
+  type MushafSide,
+} from "@/lib/bookTransition";
 
-export type MushafSide = "start" | "end";
-
-/**
- * The mushaf's visual book state, separate from page navigation state.
- * Turning past either bound never changes the page — it closes the book;
- * opening returns to the exact spread it closed on.
- */
-export type MushafPhase =
-  | "open"
-  | `closing-to-${MushafSide}`
-  | `closed-from-${MushafSide}`
-  | `opening-from-${MushafSide}`;
-
-// Timer lengths cover the CSS choreography (globals.css): closing = 480ms
-// book settle + 540ms shadow landing over a 240ms canvas fade-in; opening =
-// 320ms book lift, then a 280ms canvas fade delayed 200ms (ends 480ms)
-// while the spread eases back behind it.
-const CLOSING_MS = 580;
-const OPENING_MS = 540;
-
-const prefersReducedMotion = () =>
-  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-/**
- * Open/close state machine for the mushaf. Transitional phases are
- * timer-driven to match the CSS animations; `close` is only honoured from
- * `open`, `open` only from a settled closed state, so rapid inputs can't
- * wedge the machine mid-swing. Reduced motion settles instantly.
- */
+/** Discrete book state; animation progress remains outside React. */
 export function useMushafState() {
-  const [phase, setPhase] = useState<MushafPhase>("open");
-  const phaseRef = useRef(phase);
-  const timer = useRef<number | null>(null);
+  const [state, reactDispatch] = useReducer(reduceBookVisualState, INITIAL_BOOK_VISUAL_STATE);
+  const stateRef = useRef<BookVisualState>(state);
 
-  useEffect(() => {
-    phaseRef.current = phase;
-  }, [phase]);
-
-  const clearTimer = useCallback(() => {
-    if (timer.current !== null) {
-      window.clearTimeout(timer.current);
-      timer.current = null;
-    }
+  const send = useCallback((event: BookVisualEvent) => {
+    const next = reduceBookVisualState(stateRef.current, event);
+    if (next === stateRef.current) return false;
+    stateRef.current = next;
+    reactDispatch(event);
+    return true;
   }, []);
-  useEffect(() => clearTimer, [clearTimer]);
 
   const close = useCallback(
-    (side: MushafSide) => {
-      if (phaseRef.current !== "open") return;
-      clearTimer();
-      if (prefersReducedMotion()) {
-        setPhase(`closed-from-${side}`);
-        return;
-      }
-      setPhase(`closing-to-${side}`);
-      timer.current = window.setTimeout(
-        () => setPhase(`closed-from-${side}`),
-        CLOSING_MS
-      );
-    },
-    [clearTimer]
+    (side: MushafSide) => send({ type: "CLOSE_REQUESTED", side }),
+    [send]
   );
+  const open = useCallback(() => send({ type: "OPEN_REQUESTED" }), [send]);
+  const pageTurnStarted = useCallback(() => send({ type: "PAGE_TURN_STARTED" }), [send]);
+  const pageTurnFinished = useCallback(() => send({ type: "PAGE_TURN_FINISHED" }), [send]);
+  const pageTurnCancelled = useCallback(() => send({ type: "PAGE_TURN_CANCELLED" }), [send]);
+  const closePrepared = useCallback(() => send({ type: "CLOSE_PREPARED" }), [send]);
+  const closeFinished = useCallback(() => send({ type: "CLOSE_FINISHED" }), [send]);
+  const openFinished = useCallback(() => send({ type: "OPEN_FINISHED" }), [send]);
 
-  const open = useCallback(() => {
-    const p = phaseRef.current;
-    if (p !== "closed-from-start" && p !== "closed-from-end") return;
-    const side: MushafSide = p === "closed-from-start" ? "start" : "end";
-    clearTimer();
-    if (prefersReducedMotion()) {
-      setPhase("open");
-      return;
-    }
-    setPhase(`opening-from-${side}`);
-    timer.current = window.setTimeout(() => setPhase("open"), OPENING_MS);
-  }, [clearTimer]);
-
-  const side: MushafSide | null =
-    phase === "open" ? null : phase.endsWith("start") ? "start" : "end";
-  const cover: "closing" | "closed" | "opening" | null =
-    phase === "open"
-      ? null
-      : phase.startsWith("closing")
-        ? "closing"
-        : phase.startsWith("closed")
-          ? "closed"
-          : "opening";
+  const policy = getBookRenderPolicy(state);
+  const side = "side" in state ? state.side : null;
 
   return {
-    phase,
-    /** fully open and interactive */
-    isOpen: phase === "open",
-    /** settled shut: render ONLY the cover */
-    isSettledClosed: cover === "closed",
+    state,
+    phase: state.phase,
     side,
-    /** what the cover component should render, or null when fully open */
-    cover,
+    isOpen: state.phase === "open" || state.phase === "turning-page",
+    isInteractive: policy.readerInteractive,
+    isSettledClosed: state.phase === "closed",
+    overlayMounted: policy.overlayMounted,
+    readerSemanticallyHidden: policy.readerSemanticallyHidden,
     close,
     open,
+    pageTurnStarted,
+    pageTurnFinished,
+    pageTurnCancelled,
+    closePrepared,
+    closeFinished,
+    openFinished,
   };
 }

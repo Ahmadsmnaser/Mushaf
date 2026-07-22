@@ -5,8 +5,8 @@
  * with the page. No cover boards, no page-stack edges: just the sheet itself
  * with a hairline frame, soft shadows lifting it off the desk, and an
  * elliptical contact shadow beneath. The gutter/spine shading lives with the
- * spread itself (SpreadShading in Reader); the closed cover is a separate
- * component entirely (ClosedMushafCover).
+ * spread itself (SpreadShading in Reader); close/open physics live in the
+ * measured BookTransitionLayer so this reading surface stays mounted.
  */
 export default function BookFrame({
   aspectRatio,

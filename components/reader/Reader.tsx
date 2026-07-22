@@ -13,14 +13,16 @@ import ReaderToolbar from "@/components/chrome/ReaderToolbar";
 import QuickJumpModal from "@/components/chrome/QuickJumpModal";
 import MarksPanel from "@/components/chrome/MarksPanel";
 import ReaderSidePanel from "@/components/chrome/ReaderSidePanel";
+import ReaderQuickNav from "@/components/chrome/ReaderQuickNav";
 import BookFrame from "./BookFrame";
-import ClosedMushafCover from "./ClosedMushafCover";
+import BookTransitionLayer from "./BookTransitionLayer";
 import PageImage from "./PageImage";
 import TafsirPanel from "./TafsirPanel";
 import AudioMiniBar from "./AudioMiniBar";
 import LocalMarksMigrationPrompt from "@/components/auth/LocalMarksMigrationPrompt";
 import SignInPrompt from "@/components/auth/SignInPrompt";
 import { userApi } from "@/lib/user/client";
+import { KEYS, readJSON } from "@/lib/storage";
 
 const FLIP_MS = 560;
 const ZOOM_STEPS = [1, 1.25, 1.5, 2] as const;
@@ -102,11 +104,24 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   // Visual book state (open / closing / closed / opening), fully separate
   // from page navigation state — closing never changes the page number.
   const mushaf = useMushafState();
+  const {
+    close: requestMushafClose,
+    open: requestMushafOpen,
+    pageTurnStarted,
+    pageTurnFinished,
+    pageTurnCancelled,
+    closePrepared,
+    closeFinished,
+    openFinished,
+  } = mushaf;
   // Two-page spread on desktop, single page on narrow viewports. SSR renders
   // the desktop spread; the media query corrects after mount if needed.
   const [single, setSingle] = useState(false);
   const [zoom, setZoom] = useState<number>(1);
   const [jumpOpen, setJumpOpen] = useState(false);
+  const [quickNavOpen, setQuickNavOpen] = useState(false);
+  const [quickNavFocusSignal, setQuickNavFocusSignal] = useState(0);
+  const [lastReadSnapshot, setLastReadSnapshot] = useState<number | null>(null);
   const [marksOpen, setMarksOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [tafsirOpen, setTafsirOpen] = useState(false);
@@ -142,6 +157,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
   const dragRef = useRef<{ x0: number; lastX: number; t0: number; w: number } | null>(null);
   const wheelUnlockRef = useRef<number | null>(null);
   const fadeRef = useRef(false); // reduced-motion crossfade in flight
@@ -153,6 +169,20 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   const modalOpenRef = useRef(false);
   const panelOpenRef = useRef(false);
   const tafsirOpenRef = useRef(false);
+  const quickNavOpenRef = useRef(false);
+  const persistedLastReadRef = useRef(
+    readJSON<number | 0>(
+      KEYS.lastPage,
+      0,
+      (value): value is number | 0 =>
+        value === 0 ||
+        (typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= PAGE_COUNT)
+    )
+  );
+  const handleOpenFinished = useCallback(() => {
+    openFinished();
+    mainRef.current?.focus({ preventScroll: true });
+  }, [openFinished]);
 
   useEffect(() => {
     pageRef.current = page;
@@ -184,6 +214,21 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   }, [tafsirOpen]);
 
   useEffect(() => {
+    quickNavOpenRef.current = quickNavOpen;
+  }, [quickNavOpen]);
+
+  // Capture the persisted checkpoint before this reader session starts
+  // updating it, then keep that value stable as the "last read" shortcut.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (persistedLastReadRef.current !== 0) {
+        setLastReadSnapshot(persistedLastReadRef.current);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     const mq = window.matchMedia("(max-width: 899px)");
     const apply = () => setSingle(mq.matches);
     apply();
@@ -197,11 +242,15 @@ export default function Reader({ initialPage }: { initialPage: number }) {
     if (!f || f.phase === "drag") return;
     if (f.phase === "animating" && f.progress === 1) {
       setPage(f.to);
+      flipRef.current = null;
       setFlip(null);
+      pageTurnFinished();
     } else if (f.phase === "cancelling") {
+      flipRef.current = null;
       setFlip(null);
+      pageTurnCancelled();
     }
-  }, []);
+  }, [pageTurnCancelled, pageTurnFinished]);
 
   /** Compute the flip target from the current position, or null at the bounds. */
   const flipTarget = useCallback((dir: FlipDir) => {
@@ -225,9 +274,10 @@ export default function Reader({ initialPage }: { initialPage: number }) {
       setTafsirOpen(false);
       setJumpOpen(false);
       setMarksOpen(false);
-      mushaf.close(side);
+      setQuickNavOpen(false);
+      requestMushafClose(side);
     },
-    [mushaf.close] // eslint-disable-line react-hooks/exhaustive-deps -- stable callback off the hook
+    [requestMushafClose]
   );
 
   /** Reduced-motion page turn: a calm crossfade instead of the 3D leaf. */
@@ -263,16 +313,32 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         crossFade(t.to);
         return true;
       }
-      setFlip({ dir, from: t.pos, to: t.to, phase, progress: 0, auto, grab });
+      pageTurnStarted();
+      const nextFlip: Flip = { dir, from: t.pos, to: t.to, phase, progress: 0, auto, grab };
+      flipRef.current = nextFlip;
+      setFlip(nextFlip);
       return true;
     },
-    [flipTarget, closeBook, crossFade]
+    [flipTarget, closeBook, crossFade, pageTurnStarted]
   );
 
   const navigateByIntent = useCallback(
     (intent: NavIntent) => {
+      const activeFlip = flipRef.current;
+      if (activeFlip) {
+        const requestedDir: FlipDir = intent === "next" ? "next" : "prev";
+        const finalPosition = singleRef.current ? PAGE_COUNT : PAGE_COUNT - 1;
+        if (
+          activeFlip.phase === "animating" &&
+          activeFlip.dir === requestedDir &&
+          ((requestedDir === "next" && activeFlip.to === finalPosition) ||
+            (requestedDir === "prev" && activeFlip.to === 1))
+        ) {
+          requestMushafClose(requestedDir === "next" ? "end" : "start");
+        }
+        return;
+      }
       if (
-        flipRef.current ||
         fadeRef.current ||
         modalOpenRef.current ||
         !mushafOpenRef.current
@@ -281,7 +347,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
       const dir: FlipDir = intent === "next" ? "next" : "prev";
       beginFlip(dir, "animating", true, "middle");
     },
-    [beginFlip]
+    [beginFlip, requestMushafClose]
   );
 
   const navigateNext = useCallback(() => navigateByIntent("next"), [navigateByIntent]);
@@ -297,9 +363,12 @@ export default function Reader({ initialPage }: { initialPage: number }) {
     let inner = 0;
     const outer = requestAnimationFrame(() => {
       inner = requestAnimationFrame(() => {
-        setFlip((f) =>
-          f && f.phase === "animating" ? { ...f, progress: 1 } : f
-        );
+        setFlip((f) => {
+          if (!f || f.phase !== "animating") return f;
+          const nextFlip = { ...f, progress: 1 };
+          flipRef.current = nextFlip;
+          return nextFlip;
+        });
       });
     });
     return () => {
@@ -310,9 +379,11 @@ export default function Reader({ initialPage }: { initialPage: number }) {
 
   /** Direct jump (modals, panel): no flip animation, straight to the page. */
   const jumpTo = useCallback((p: number) => {
+    if (flipRef.current) pageTurnCancelled();
+    flipRef.current = null;
     setFlip(null);
     setPage(clampPage(p));
-  }, []);
+  }, [pageTurnCancelled]);
 
   // Safety net: settle even if transitionend never fires (hidden tab, etc.).
   useEffect(() => {
@@ -360,7 +431,9 @@ export default function Reader({ initialPage }: { initialPage: number }) {
     // RTL: next follows rightward motion, prev follows leftward motion.
     const dx = f.dir === "next" ? e.clientX - d.x0 : d.x0 - e.clientX;
     const progress = Math.min(Math.max(dx / d.w, 0), 1);
-    setFlip({ ...f, progress });
+    const nextFlip = { ...f, progress };
+    flipRef.current = nextFlip;
+    setFlip(nextFlip);
   }, []);
 
   const endDrag = useCallback(() => {
@@ -378,16 +451,29 @@ export default function Reader({ initialPage }: { initialPage: number }) {
     // transitionend would ever fire).
     if (prefersReducedMotion()) {
       if (commit) setPage(f.to);
+      flipRef.current = null;
       setFlip(null);
+      if (commit) pageTurnFinished();
+      else pageTurnCancelled();
     } else if (commit && f.progress > 0.995) {
       setPage(f.to);
+      flipRef.current = null;
       setFlip(null);
+      pageTurnFinished();
     } else if (!commit && f.progress < 0.005) {
+      flipRef.current = null;
       setFlip(null);
+      pageTurnCancelled();
     } else {
-      setFlip({ ...f, phase: commit ? "animating" : "cancelling", progress: commit ? 1 : 0 });
+      const nextFlip: Flip = {
+        ...f,
+        phase: commit ? "animating" : "cancelling",
+        progress: commit ? 1 : 0,
+      };
+      flipRef.current = nextFlip;
+      setFlip(nextFlip);
     }
-  }, []);
+  }, [pageTurnCancelled, pageTurnFinished]);
 
   // Keep URL, title and last-read position on the settled page. replaceState
   // (not router.push): individual flips shouldn't pile up in browser history.
@@ -404,13 +490,15 @@ export default function Reader({ initialPage }: { initialPage: number }) {
     const onPop = () => {
       const m = window.location.pathname.match(/\/page\/(\d+)/);
       if (m) {
+        if (flipRef.current) pageTurnCancelled();
+        flipRef.current = null;
         setFlip(null);
         setPage(clampPage(Number(m[1])));
       }
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  }, [pageTurnCancelled]);
 
   useEffect(() => {
     const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -443,14 +531,21 @@ export default function Reader({ initialPage }: { initialPage: number }) {
           !isTypingTarget(e.target)
         ) {
           e.preventDefault();
-          mushaf.open();
+          requestMushafOpen();
         }
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.code === "KeyK") {
         e.preventDefault();
         setMarksOpen(false);
-        setJumpOpen((o) => !o);
+        setJumpOpen(false);
+        setQuickNavOpen(true);
+        setQuickNavFocusSignal((signal) => signal + 1);
+        return;
+      }
+      if (e.key === "Escape" && quickNavOpenRef.current) {
+        e.preventDefault();
+        setQuickNavOpen(false);
         return;
       }
       if (e.key === "Escape" && panelOpenRef.current && !modalOpenRef.current) {
@@ -476,7 +571,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [navigateByIntent, toggleBookmark, mushaf.open]); // eslint-disable-line react-hooks/exhaustive-deps -- stable callback off the hook
+  }, [navigateByIntent, requestMushafOpen, toggleBookmark]);
 
   useEffect(() => {
     const onWheel = (e: WheelEvent) => {
@@ -631,14 +726,14 @@ export default function Reader({ initialPage }: { initialPage: number }) {
 
   return (
     <main
+      ref={mainRef}
+      tabIndex={-1}
       data-reader-theme={readerTheme}
       data-mushaf-style={mushafStyle}
       className="reader-canvas relative h-svh w-full select-none overflow-hidden"
     >
-      {/* Open-state rendering: unmounted entirely once the book settles
-          shut, so the closed state is only ever the cover. */}
-      {!mushaf.isSettledClosed && (
-        <>
+      {/* The real reader remains mounted behind the transition layer so page
+          imagery and layout never remount during a close/open cycle. */}
       {/* RTL: advancing moves rightward — the right zone is NEXT */}
       <NavZone
         side="right"
@@ -655,20 +750,15 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         hidden={!mushaf.isOpen}
       />
 
-      <div ref={scrollRef} className="h-full w-full overflow-auto">
+      <div
+        ref={scrollRef}
+        className="h-full w-full overflow-auto"
+        aria-hidden={mushaf.readerSemanticallyHidden || undefined}
+        inert={!mushaf.isOpen}
+      >
         <div className="flex min-h-full min-w-full">
-          {/* The spread reacts to the cover: recedes as the book closes over
-              it, eases back as it opens. Safe here — flips can't run while
-              the mushaf isn't open, so this filter never wraps a live 3D
-              leaf (the mirrored-Quran gotcha). */}
           <div
-            className={`m-auto py-[3.5svh] ${
-              mushaf.cover === "closing"
-                ? "spread-recede"
-                : mushaf.cover === "opening"
-                  ? "spread-return"
-                  : ""
-            }`}
+            className="m-auto py-[3.5svh]"
             style={{ width: bookWidth }}
           >
             {single ? (
@@ -748,21 +838,45 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         </div>
       </div>
 
-        </>
-      )}
-
-      {/* Closed-state rendering: mounted only while closing/closed/opening,
-          fresh each cycle so its animations start clean. */}
-      {mushaf.cover && mushaf.side && (
-        <ClosedMushafCover
-          phase={mushaf.cover}
+      {mushaf.side &&
+        (mushaf.phase === "preparing-to-close" ||
+          mushaf.phase === "closing" ||
+          mushaf.phase === "closed" ||
+          mushaf.phase === "opening") && (
+        <BookTransitionLayer
+          phase={mushaf.phase}
           side={mushaf.side}
-          onOpen={mushaf.open}
+          single={single}
+          rightPage={single ? page : s}
+          leftPage={single ? null : s + 1}
+          sourceBookRef={bookRef}
+          canvasRef={mainRef}
+          onPrepared={closePrepared}
+          onCloseFinished={closeFinished}
+          onOpenFinished={handleOpenFinished}
+          onOpen={requestMushafOpen}
         />
       )}
 
       {!mushaf.isSettledClosed && (
         <>
+      {mushaf.isOpen && (
+        <ReaderQuickNav
+          key={page}
+          open={quickNavOpen}
+          currentPage={page}
+          lastReadPage={lastReadSnapshot}
+          hasBookmarks={marks.some((mark) => mark.type === "bookmark")}
+          focusInputSignal={quickNavFocusSignal}
+          onOpen={() => setQuickNavOpen(true)}
+          onClose={() => setQuickNavOpen(false)}
+          onJump={jumpTo}
+          onOpenBookmarks={() => {
+            setQuickNavOpen(false);
+            setMarksOpen(true);
+          }}
+        />
+      )}
       <ReaderToolbar
         idle={idle && !jumpOpen && !marksOpen && !panelOpen && !tafsirOpen}
         hidden={!mushaf.isOpen}
