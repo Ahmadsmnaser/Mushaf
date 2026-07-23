@@ -503,8 +503,8 @@ export default function Reader({
     }
   }, []);
 
-  // Keep URL, title and last-read position on the settled page. replaceState
-  // (not router.push): individual flips shouldn't pile up in browser history.
+  // Keep URL and title on the settled page/ayah. replaceState (not
+  // router.push): individual flips shouldn't pile up in browser history.
   useEffect(() => {
     const nextUrl = new URL(window.location.href);
     nextUrl.pathname = `/page/${page}`;
@@ -512,11 +512,20 @@ export default function Reader({
     else nextUrl.searchParams.delete("ayah");
     window.history.replaceState(null, "", `${nextUrl.pathname}${nextUrl.search}`);
     document.title = `المصحف — صفحة ${arNum(page)}`;
+  }, [page, selectedVerseKey]);
+
+  // Persist the settled page as last-read. localStorage is written straight
+  // away; the authenticated server sync is debounced and keyed only on `page`
+  // so rapid page-turning coalesces into a single PATCH (instead of one write
+  // per flipped page) and selecting an ayah never triggers a last-read write.
+  useEffect(() => {
     saveLastRead(page);
-    if (isAuthenticated) {
+    if (!isAuthenticated) return;
+    const timer = window.setTimeout(() => {
       void userApi.updatePreferences({ lastReadPage: page }).catch(() => {});
-    }
-  }, [isAuthenticated, page, selectedVerseKey]);
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [isAuthenticated, page]);
 
   useEffect(() => {
     const onPop = () => {
