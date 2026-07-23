@@ -261,6 +261,17 @@ body {
   clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 76%, 0 100%);
 }
 
+/* Search-match highlight: a calm accent wash, theme-token driven so it holds
+   up in light and night themes. Never alters the Quran text it wraps. */
+.search-hl {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: color-mix(in srgb, var(--accent) 82%, var(--ink));
+  border-radius: 3px;
+  padding: 0 0.1em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
 /*
  * Dialogs ease in gently — and OUT gently. The shell stays mounted: its
  * `visibility` flips instantly on open but only after the exit transition
@@ -696,6 +707,38 @@ body {
   background: var(--mushaf-image-slot-bg);
 }
 
+.ayah-region {
+  fill: transparent;
+  stroke: transparent;
+  cursor: pointer;
+  transition: fill 120ms ease, stroke 120ms ease;
+}
+
+.ayah-region[data-state="hovered"] {
+  fill: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.ayah-region[data-state="focused"] {
+  fill: color-mix(in srgb, var(--accent) 19%, transparent);
+  stroke: color-mix(in srgb, var(--accent) 72%, transparent);
+  stroke-width: 1.5;
+}
+
+.ayah-region[data-state="selected"] {
+  fill: color-mix(in srgb, var(--accent) 25%, transparent);
+  stroke: color-mix(in srgb, var(--accent) 58%, transparent);
+  stroke-width: 1;
+}
+
+.ayah-debug-label {
+  fill: #c1121f;
+  font: 8px ui-monospace, monospace;
+  paint-order: stroke;
+  pointer-events: none;
+  stroke: white;
+  stroke-width: 2px;
+}
+
 /* Where the book meets the surface: a soft ellipse, no hard edges. */
 .desk-shadow {
   position: absolute;
@@ -940,14 +983,21 @@ body {
 }
 
 /*
- * Mushaf styles. These alter only the physical presentation around the page
- * image: paper backing, frame hairlines, page depth and shadows. Quran PNG
- * pixels are never filtered, recolored, blended or distorted.
+ * Mushaf page treatment — DERIVED from the app theme (data-mushaf-treatment on
+ * the reader <main>, an ancestor of both pages and both leaf faces, so the
+ * whole spread and every frame of a page turn always share one treatment).
+ * These alter only the presentation AROUND the page image: the paper backing
+ * (which shows through the transparent Quran PNG, so a new paper tone is a real
+ * full-page change, never an overlay), frame hairlines, page depth, edge and
+ * desk shadows, and at most an extremely restrained image filter. Papers stay
+ * light so black text and harakat keep full contrast. The base block is the
+ * "neutral" treatment (white theme).
  */
-[data-mushaf-style] {
-  --mushaf-paper: #fffdf6;
-  --mushaf-frame-bg: #fffdf6;
-  --mushaf-image-slot-bg: #fffdf6;
+[data-mushaf-treatment] {
+  --mushaf-paper: #fcfbf7;
+  --mushaf-frame-bg: #fdfcf8;
+  --mushaf-image-slot-bg: #fffef9;
+  --mushaf-image-filter: none;
   --mushaf-page-frame-inset: 1.05%;
   --mushaf-image-slot-inset: 0.65%;
   --mushaf-sheet-radius: 3px;
@@ -980,40 +1030,42 @@ body {
   --mushaf-desk-shadow: rgba(40, 30, 14, 0.32);
 }
 
-[data-mushaf-style="premiumPaper"] {
-  --mushaf-paper: #fbf3df;
-  --mushaf-frame-bg: #fcf6e8;
-  --mushaf-image-slot-bg: #fffaf0;
-  --mushaf-page-frame-inset: 1.3%;
-  --mushaf-image-slot-inset: 0.85%;
-  --mushaf-sheet-radius: 5px;
-  --mushaf-page-radius: 3px;
-  --mushaf-sheet-shadow:
-    0 0 0 1px color-mix(in srgb, var(--gold) 44%, transparent),
-    0 3px 8px -2px rgba(52, 42, 22, 0.34),
-    0 22px 52px -20px rgba(52, 42, 22, 0.48),
-    0 58px 116px -46px rgba(52, 42, 22, 0.44);
-  --mushaf-page-frame-shadow:
-    inset 0 0 0 1px rgba(255, 255, 250, 0.78),
-    inset 0 0 24px rgba(92, 64, 24, 0.07);
-  --mushaf-leaf-shadow:
-    inset 0 0 0 1px rgba(176, 146, 90, 0.18),
-    0 0 26px rgba(40, 28, 10, 0.2);
-  --mushaf-paper-back:
-    linear-gradient(to right, rgba(92, 64, 24, 0.08), transparent 13%, transparent 87%, rgba(92, 64, 24, 0.1)),
-    linear-gradient(to bottom, rgba(255, 255, 248, 0.58), transparent 44%),
-    var(--mushaf-paper);
-  --mushaf-page-depth:
-    linear-gradient(to right, rgba(70, 48, 18, 0.075), transparent 2.8%),
-    linear-gradient(to left, rgba(70, 48, 18, 0.075), transparent 2.8%),
-    linear-gradient(
-      to bottom,
-      rgba(70, 48, 18, 0.06),
-      transparent 2.4%,
-      transparent 96.5%,
-      rgba(70, 48, 18, 0.095)
-    );
-  --mushaf-desk-shadow: rgba(44, 31, 12, 0.36);
+/*
+ * Theme treatments. Each overrides the paper/frame/slot tones (and a restrained
+ * desk-shadow / image filter) so switching themes is a clearly perceptible,
+ * calm change to the whole page — especially warm↔cool (beige↔navy) and
+ * sage↔neutral (green↔white). Only paper/environment moves; --mushaf-paper-back
+ * and --mushaf-page-depth compose over var(--mushaf-paper) so edges and the
+ * turning leaf's back inherit the same tone automatically.
+ */
+[data-mushaf-treatment="warm"] {
+  --mushaf-paper: #f3e6c9;
+  --mushaf-frame-bg: #f6ecd6;
+  --mushaf-image-slot-bg: #faf3e2;
+  --mushaf-image-filter: sepia(0.1) saturate(1.04);
+  --mushaf-desk-shadow: rgba(60, 42, 16, 0.4);
+}
+
+[data-mushaf-treatment="sage"] {
+  --mushaf-paper: #e6efe2;
+  --mushaf-frame-bg: #ecf2e8;
+  --mushaf-image-slot-bg: #f2f8f0;
+  --mushaf-desk-shadow: rgba(26, 46, 30, 0.34);
+}
+
+[data-mushaf-treatment="cool"] {
+  --mushaf-paper: #e3e9f2;
+  --mushaf-frame-bg: #e9eef5;
+  --mushaf-image-slot-bg: #f1f5fb;
+  --mushaf-desk-shadow: rgba(20, 32, 56, 0.36);
+}
+
+[data-mushaf-treatment="dim"] {
+  --mushaf-paper: #ebe6da;
+  --mushaf-frame-bg: #efeade;
+  --mushaf-image-slot-bg: #f4f0e6;
+  --mushaf-image-filter: brightness(0.95);
+  --mushaf-desk-shadow: rgba(18, 14, 8, 0.48);
 }
 
 /* Soft canvas glow rising behind the toolbar. */

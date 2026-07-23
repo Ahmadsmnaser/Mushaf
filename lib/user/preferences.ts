@@ -1,9 +1,8 @@
-import { isMushafStyle, isReaderTheme, type MushafStyle, type ReaderTheme } from "@/lib/readerConfig";
+import { isReaderTheme, type ReaderTheme } from "@/lib/readerConfig";
 import { PAGE_COUNT } from "@/lib/mushaf/source";
 
 export interface UserPreferences {
   readerTheme?: ReaderTheme;
-  mushafStyle?: MushafStyle;
   reciterId?: string;
   lastReadPage?: number;
   readingMode?: string;
@@ -11,7 +10,6 @@ export interface UserPreferences {
 
 type PreferencesRow = {
   reader_theme: ReaderTheme | null;
-  mushaf_style: MushafStyle | null;
   reciter_id: string | null;
   last_read_page: number | null;
   reading_mode: string | null;
@@ -33,7 +31,6 @@ export function rowToPreferences(row: PreferencesRow | null): UserPreferences {
   if (!row) return {};
   return {
     readerTheme: row.reader_theme ?? undefined,
-    mushafStyle: row.mushaf_style ?? undefined,
     reciterId: row.reciter_id ?? undefined,
     lastReadPage: row.last_read_page ?? undefined,
     readingMode: row.reading_mode ?? undefined,
@@ -48,10 +45,8 @@ export function validatePreferencePatch(input: unknown): UserPreferences {
     if (!isReaderTheme(input.readerTheme)) throw new Error("invalid_theme");
     patch.readerTheme = input.readerTheme;
   }
-  if (input.mushafStyle !== undefined) {
-    if (!isMushafStyle(input.mushafStyle)) throw new Error("invalid_style");
-    patch.mushafStyle = input.mushafStyle;
-  }
+  // mushafStyle / syncMushafWithTheme were part of a removed feature; ignore
+  // them silently if an older client still sends them (never throw).
   if (input.reciterId !== undefined) patch.reciterId = optionalShortString(input.reciterId);
   if (input.readingMode !== undefined) patch.readingMode = optionalShortString(input.readingMode);
   if (input.lastReadPage !== undefined) {
@@ -72,7 +67,6 @@ export function validatePreferencePatch(input: unknown): UserPreferences {
 export function preferencesToRow(patch: UserPreferences) {
   return {
     ...(patch.readerTheme !== undefined ? { reader_theme: patch.readerTheme } : {}),
-    ...(patch.mushafStyle !== undefined ? { mushaf_style: patch.mushafStyle } : {}),
     ...(patch.reciterId !== undefined ? { reciter_id: patch.reciterId ?? null } : {}),
     ...(patch.lastReadPage !== undefined ? { last_read_page: patch.lastReadPage } : {}),
     ...(patch.readingMode !== undefined ? { reading_mode: patch.readingMode ?? null } : {}),

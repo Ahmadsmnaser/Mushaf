@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getPageImageUrl, PAGE_HEIGHT, PAGE_WIDTH } from "@/lib/mushaf/source";
+import type { AyahOverlayRecord, VerseKey } from "@/lib/mushaf/ayahRegions";
+import AyahOverlay, { type MenuAnchorRect } from "./AyahOverlay";
 
 const arNum = (n: number) => n.toLocaleString("ar-EG");
 
@@ -23,7 +25,31 @@ function PageSurface({ children }: { children: React.ReactNode }) {
  * One mushaf page: the image on a paper-toned sheet, with a quiet skeleton
  * while loading and a retry state on failure — never a blank rectangle.
  */
-export default function PageImage({ page }: { page: number }) {
+export default function PageImage({
+  page,
+  overlayEnabled = false,
+  hoveredVerseKey = null,
+  focusedVerseKey = null,
+  selectedVerseKey = null,
+  onAyahHover = () => {},
+  onAyahFocus = () => {},
+  onAyahActivate = () => {},
+  onAyahRecords = () => {},
+}: {
+  page: number;
+  overlayEnabled?: boolean;
+  hoveredVerseKey?: VerseKey | null;
+  focusedVerseKey?: VerseKey | null;
+  selectedVerseKey?: VerseKey | null;
+  onAyahHover?: (verseKey: VerseKey | null) => void;
+  onAyahFocus?: (verseKey: VerseKey | null) => void;
+  onAyahActivate?: (
+    record: AyahOverlayRecord,
+    anchor: MenuAnchorRect,
+    trigger: HTMLButtonElement | null
+  ) => void;
+  onAyahRecords?: (page: number, records: AyahOverlayRecord[]) => void;
+}) {
   const [status, setStatus] = useState<Status>("loading");
   const [attempt, setAttempt] = useState(0);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -52,8 +78,11 @@ export default function PageImage({ page }: { page: number }) {
   }
 
   return (
-    // Fixed paper white, never themed: the KSU page PNGs have a transparent
-    // background, so this backing IS the paper of the mushaf page.
+    // The KSU page PNGs are transparent, so the surface behind them IS the
+    // mushaf paper — its tone comes from the theme's --mushaf-paper. The
+    // optional --mushaf-image-filter is an extremely restrained treatment on
+    // the ink itself (default none); it lives on the <img>, never on the 3D
+    // leaf, so preserve-3d/backface-visibility are unaffected.
     <PageSurface>
       {/* eslint-disable-next-line @next/next/no-img-element -- 604 static
           same-size PNGs served from /public; the optimizer adds nothing */}
@@ -67,9 +96,22 @@ export default function PageImage({ page }: { page: number }) {
         draggable={false}
         onLoad={() => setStatus("ready")}
         onError={() => setStatus("error")}
+        style={{ filter: "var(--mushaf-image-filter)" }}
         className={`h-full w-full object-contain transition-opacity duration-200 ${
           status === "ready" ? "opacity-100" : "opacity-0"
         }`}
+      />
+      <AyahOverlay
+        page={page}
+        enabled={overlayEnabled}
+        imageReady={status === "ready"}
+        hoveredVerseKey={hoveredVerseKey}
+        focusedVerseKey={focusedVerseKey}
+        selectedVerseKey={selectedVerseKey}
+        onHover={onAyahHover}
+        onFocus={onAyahFocus}
+        onActivate={onAyahActivate}
+        onRecords={onAyahRecords}
       />
       {status === "loading" && (
         <div className="absolute inset-2 animate-pulse rounded-sm bg-ink-soft/5" />

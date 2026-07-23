@@ -1,8 +1,7 @@
 "use client";
 
-import MushafStyleSwitcher from "./MushafStyleSwitcher";
 import ThemeSwitcher from "./ThemeSwitcher";
-import type { MushafStyle, ReaderTheme } from "@/lib/readerSettings";
+import type { ReaderTheme } from "@/lib/readerSettings";
 import AccountButton from "@/components/auth/AccountButton";
 
 const arNum = (n: number) => n.toLocaleString("ar-EG");
@@ -41,8 +40,6 @@ export default function ReaderSidePanel({
   marksCount,
   readerTheme,
   onReaderThemeChange,
-  mushafStyle,
-  onMushafStyleChange,
   zoom,
   onZoomIn,
   onZoomOut,
@@ -58,8 +55,6 @@ export default function ReaderSidePanel({
   marksCount: number;
   readerTheme: ReaderTheme;
   onReaderThemeChange: (t: ReaderTheme) => void;
-  mushafStyle: MushafStyle;
-  onMushafStyleChange: (style: MushafStyle) => void;
   zoom: number;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -135,16 +130,10 @@ export default function ReaderSidePanel({
         </section>
 
         <section>
-          <h3 className="mb-2 font-display text-[17px] text-accent">ثيم القارئ</h3>
+          <h3 className="mb-2 font-display text-[17px] text-accent">سمة الموقع</h3>
           <ThemeSwitcher theme={readerTheme} onChange={onReaderThemeChange} />
-        </section>
-
-        <section>
-          <h3 className="mb-2 font-display text-[17px] text-accent">مظهر المصحف</h3>
-          <MushafStyleSwitcher
-            mushafStyle={mushafStyle}
-            onChange={onMushafStyleChange}
-          />
+          <p className="mt-2 px-1 text-[11px] leading-relaxed text-ink-soft">
+          </p>
         </section>
 
         <section>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getPageMeta, normalizeArabic, PAGE_COUNT } from "@/lib/mushaf/source";
 import {
   MARK_TYPE_LABELS,
@@ -96,6 +96,7 @@ export default function MarksPanel({
   isAuthenticated = false,
   saving = false,
   onRequireSignIn,
+  targetVerse,
 }: {
   open: boolean;
   onClose: () => void;
@@ -115,6 +116,12 @@ export default function MarksPanel({
   isAuthenticated?: boolean;
   saving?: boolean;
   onRequireSignIn?: () => void;
+  targetVerse?: {
+    pageNumber: number;
+    verseKey: string;
+    surahNumber: number;
+    ayahNumber: number;
+  };
 }) {
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
@@ -123,10 +130,20 @@ export default function MarksPanel({
   const [newNote, setNewNote] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const newNoteRef = useRef<HTMLInputElement>(null);
 
-  const currentMeta = currentPage ? getPageMeta(currentPage) : null;
-  const currentPageMarks = currentPage
-    ? marks.filter((mark) => mark.pageNumber === currentPage)
+  const effectivePage = targetVerse?.pageNumber ?? currentPage;
+
+  useEffect(() => {
+    if (!open || !targetVerse) return;
+    const frame = requestAnimationFrame(() => newNoteRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [open, targetVerse]);
+
+  const currentMeta = effectivePage ? getPageMeta(effectivePage) : null;
+  const effectiveNewType: MarkType = targetVerse ? "note" : newType;
+  const currentPageMarks = effectivePage
+    ? marks.filter((mark) => mark.pageNumber === effectivePage)
     : [];
   const pageFilterNumber = parsePageInput(pageFilter);
   const normalizedQuery = normalizeArabic(query.trim().toLowerCase());
@@ -143,10 +160,19 @@ export default function MarksPanel({
   );
 
   const addCurrentPageNote = () => {
-    if (!currentPage) return;
+    if (!effectivePage) return;
     const note = newNote.trim();
     if (!note) return;
-    const saved = onAddMark(currentPage, newType, { note });
+    const saved = onAddMark(effectivePage, effectiveNewType, {
+      note,
+      ...(targetVerse
+        ? {
+            verseKey: targetVerse.verseKey,
+            surahNumber: targetVerse.surahNumber,
+            ayahNumber: targetVerse.ayahNumber,
+          }
+        : {}),
+    });
     if (!saved) {
       setStatus("سجّل الدخول لحفظ علاماتك وملاحظاتك ومزامنتها بين أجهزتك.");
       return;
@@ -205,12 +231,12 @@ export default function MarksPanel({
               )}
             </section>
           )}
-          {currentPage && currentMeta && (
+          {effectivePage && currentMeta && (
             <section className="rounded-lg border border-gold/20 bg-sheet/55 px-3 py-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="text-sm text-ink">
-                    الصفحة الحالية {arNum(currentPage)}
+                    {targetVerse ? `الآية ${targetVerse.verseKey}` : "الصفحة الحالية"} {arNum(effectivePage)}
                     <span className="mx-2 text-gold/70">·</span>
                     <span className="font-display text-accent">{currentMeta.surahs[0]}</span>
                   </p>
@@ -221,15 +247,16 @@ export default function MarksPanel({
                   </p>
                 </div>
                 {onTogglePageBookmark && isPageBookmarked && (
-                  <ActionButton onClick={() => onTogglePageBookmark(currentPage)} disabled={saving}>
-                    {isPageBookmarked(currentPage) ? "إزالة العلامة" : "حفظ علامة"}
+                  <ActionButton onClick={() => onTogglePageBookmark(effectivePage)} disabled={saving}>
+                    {isPageBookmarked(effectivePage) ? "إزالة العلامة" : "حفظ علامة"}
                   </ActionButton>
                 )}
               </div>
               <div className="mt-3 grid gap-2 sm:grid-cols-[150px_1fr_auto]">
                 <select
-                  value={newType}
+                  value={effectiveNewType}
                   onChange={(e) => setNewType(e.target.value as MarkType)}
+                  disabled={Boolean(targetVerse)}
                   className="rounded border border-gold/25 bg-paper px-2 py-2 text-sm text-ink"
                   aria-label="نوع الملاحظة"
                 >
@@ -240,9 +267,10 @@ export default function MarksPanel({
                   ))}
                 </select>
                 <input
+                  ref={newNoteRef}
                   value={newNote}
                   onChange={(e) => setNewNote(e.target.value)}
-                  placeholder="أضف ملاحظة لهذه الصفحة..."
+                  placeholder={targetVerse ? `أضف ملاحظة للآية ${targetVerse.verseKey}...` : "أضف ملاحظة لهذه الصفحة..."}
                   className="min-w-0 rounded border border-gold/25 bg-paper px-3 py-2 text-sm text-ink placeholder:text-ink-soft/55"
                 />
                 <ActionButton onClick={addCurrentPageNote} disabled={!newNote.trim() || saving}>

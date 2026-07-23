@@ -1,7 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { clampPage, getPageMeta, PAGE_COUNT } from "@/lib/mushaf/source";
+import {
+  clampPage,
+  getPageMeta,
+  pageToSpreadStart,
+  PAGE_COUNT,
+  type VerseNavigationTarget,
+} from "@/lib/mushaf/source";
+import { getMushafTreatment } from "@/lib/readerSettings";
 import { saveLastRead } from "@/lib/useLastRead";
 import { useMarks } from "@/lib/useMarks";
 import { useSyncedReaderSettings } from "@/lib/useSyncedReaderSettings";
@@ -11,6 +18,7 @@ import { useMushafState } from "@/lib/useMushafState";
 import { useQuranAudio } from "@/lib/audio/useQuranAudio";
 import ReaderToolbar from "@/components/chrome/ReaderToolbar";
 import QuickJumpModal from "@/components/chrome/QuickJumpModal";
+import SearchModal from "@/components/chrome/SearchModal";
 import MarksPanel from "@/components/chrome/MarksPanel";
 import ReaderSidePanel from "@/components/chrome/ReaderSidePanel";
 import BookFrame from "./BookFrame";
@@ -21,6 +29,9 @@ import AudioMiniBar from "./AudioMiniBar";
 import LocalMarksMigrationPrompt from "@/components/auth/LocalMarksMigrationPrompt";
 import SignInPrompt from "@/components/auth/SignInPrompt";
 import { userApi } from "@/lib/user/client";
+import { isVerseKey, type AyahOverlayRecord, type VerseKey } from "@/lib/mushaf/ayahRegions";
+import AyahContextMenu, { type AyahMenuAction } from "./AyahContextMenu";
+import type { MenuAnchorRect } from "./AyahOverlay";
 
 const FLIP_MS = 560;
 const ZOOM_STEPS = [1, 1.25, 1.5, 2] as const;
@@ -66,9 +77,6 @@ function getNavigationDirection(
   return "cancel";
 }
 
-/** Spreads pair (odd, even): (1,2) … (603,604). Right page = odd = lower. */
-const toSpreadStart = (n: number) => (n % 2 === 0 ? n - 1 : n);
-
 function getGrabZone(y: number, top: number, height: number): GrabZone {
   const ratio = (y - top) / height;
   if (ratio < 0.34) return "top";
@@ -96,7 +104,13 @@ interface Flip {
   grab: GrabZone;
 }
 
-export default function Reader({ initialPage }: { initialPage: number }) {
+export default function Reader({
+  initialPage,
+  initialAyahKey = null,
+}: {
+  initialPage: number;
+  initialAyahKey?: VerseKey | null;
+}) {
   const [page, setPage] = useState(() => clampPage(initialPage));
   const [flip, setFlip] = useState<Flip | null>(null);
   // Visual book state (open / closing / closed / opening), fully separate
@@ -107,10 +121,22 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   const [single, setSingle] = useState(false);
   const [zoom, setZoom] = useState<number>(1);
   const [jumpOpen, setJumpOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [marksOpen, setMarksOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [tafsirOpen, setTafsirOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [hoveredVerseKey, setHoveredVerseKey] = useState<VerseKey | null>(null);
+  const [focusedVerseKey, setFocusedVerseKey] = useState<VerseKey | null>(null);
+  const [selectedVerseKey, setSelectedVerseKey] = useState<VerseKey | null>(initialAyahKey);
+  const [ayahMenu, setAyahMenu] = useState<{
+    record: AyahOverlayRecord;
+    anchor: MenuAnchorRect;
+  } | null>(null);
+  const [visibleAyahs, setVisibleAyahs] = useState<Record<number, AyahOverlayRecord[]>>({});
+  const [tafsirVerseKey, setTafsirVerseKey] = useState<VerseKey | null>(null);
+  const [marksTarget, setMarksTarget] = useState<AyahOverlayRecord | null>(null);
+  const [ayahStatus, setAyahStatus] = useState("");
 
   // Recitation player, shared by the tafsir panel and the floating mini-bar.
   // It deliberately survives closing the tafsir drawer; shutting the book's
@@ -122,7 +148,12 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   }, [mushaf.isOpen, stopAudio]);
 
   const [readerSettings, setReaderSettings] = useSyncedReaderSettings();
-  const { readerTheme, mushafStyle } = readerSettings;
+  const { readerTheme } = readerSettings;
+  // The Mushaf's page treatment is DERIVED from the theme (one canonical image
+  // set, no honest independent "Mushaf color" to pick). Set once on <main>, an
+  // ancestor of both pages and both leaf faces, so the whole spread — and every
+  // frame of a page turn — always shares one treatment.
+  const mushafTreatment = getMushafTreatment(readerTheme);
   const idle = useAutoHideToolbar(5000);
   const {
     marks,
@@ -131,6 +162,8 @@ export default function Reader({ initialPage }: { initialPage: number }) {
     removeMark,
     isPageBookmarked,
     togglePageBookmark,
+    isVerseBookmarked,
+    toggleVerseBookmark,
     exportStorage,
     importStorage,
     marksPending,
@@ -153,6 +186,53 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   const modalOpenRef = useRef(false);
   const panelOpenRef = useRef(false);
   const tafsirOpenRef = useRef(false);
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+  const clearAyahInteraction = useCallback((restoreFocus = false) => {
+    const trigger = menuTriggerRef.current;
+    setHoveredVerseKey(null);
+    setFocusedVerseKey(null);
+    setSelectedVerseKey(null);
+    setAyahMenu(null);
+    setTafsirVerseKey(null);
+    setMarksTarget(null);
+    menuTriggerRef.current = null;
+    if (restoreFocus && trigger) requestAnimationFrame(() => trigger.focus());
+  }, []);
+
+  const closeAyahMenu = useCallback((restoreFocus: boolean, clearSelection = true) => {
+    const trigger = menuTriggerRef.current;
+    setAyahMenu(null);
+    menuTriggerRef.current = null;
+    if (clearSelection) setSelectedVerseKey(null);
+    if (restoreFocus && trigger) requestAnimationFrame(() => trigger.focus());
+  }, []);
+
+  const handleAyahMenuClose = useCallback(
+    (restoreFocus: boolean) => closeAyahMenu(restoreFocus, true),
+    [closeAyahMenu]
+  );
+
+  const handleAyahRecords = useCallback(
+    (pageNumber: number, records: AyahOverlayRecord[]) => {
+      setVisibleAyahs((current) => ({ ...current, [pageNumber]: records }));
+    },
+    []
+  );
+
+  const handleAyahActivate = useCallback(
+    (
+      record: AyahOverlayRecord,
+      anchor: MenuAnchorRect,
+      trigger: HTMLButtonElement | null
+    ) => {
+      setSelectedVerseKey(record.verseKey);
+      setPage(record.pageNumber);
+      setAyahMenu({ record, anchor });
+      menuTriggerRef.current = trigger;
+    },
+    []
+  );
 
   useEffect(() => {
     pageRef.current = page;
@@ -172,8 +252,8 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   }, [single]);
 
   useEffect(() => {
-    modalOpenRef.current = jumpOpen || marksOpen;
-  }, [jumpOpen, marksOpen]);
+    modalOpenRef.current = jumpOpen || marksOpen || searchOpen;
+  }, [jumpOpen, marksOpen, searchOpen]);
 
   useEffect(() => {
     panelOpenRef.current = panelOpen;
@@ -182,6 +262,20 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   useEffect(() => {
     tafsirOpenRef.current = tafsirOpen;
   }, [tafsirOpen]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden) clearAyahInteraction(false);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [clearAyahInteraction]);
+
+  useEffect(() => {
+    if (!ayahStatus) return;
+    const timeout = window.setTimeout(() => setAyahStatus(""), 2600);
+    return () => window.clearTimeout(timeout);
+  }, [ayahStatus]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 899px)");
@@ -206,7 +300,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   /** Compute the flip target from the current position, or null at the bounds. */
   const flipTarget = useCallback((dir: FlipDir) => {
     const isSingle = singleRef.current;
-    const pos = isSingle ? pageRef.current : toSpreadStart(pageRef.current);
+    const pos = isSingle ? pageRef.current : pageToSpreadStart(pageRef.current);
     const step = isSingle ? 1 : 2;
     const max = isSingle ? PAGE_COUNT : PAGE_COUNT - 1;
     const to = Math.min(Math.max(1, pos + (dir === "next" ? step : -step)), max);
@@ -225,9 +319,10 @@ export default function Reader({ initialPage }: { initialPage: number }) {
       setTafsirOpen(false);
       setJumpOpen(false);
       setMarksOpen(false);
+      clearAyahInteraction(false);
       mushaf.close(side);
     },
-    [mushaf.close] // eslint-disable-line react-hooks/exhaustive-deps -- stable callback off the hook
+    [clearAyahInteraction, mushaf]
   );
 
   /** Reduced-motion page turn: a calm crossfade instead of the 3D leaf. */
@@ -259,6 +354,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         closeBook(dir === "prev" ? "start" : "end");
         return false;
       }
+      clearAyahInteraction(false);
       if (auto && prefersReducedMotion()) {
         crossFade(t.to);
         return true;
@@ -266,7 +362,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
       setFlip({ dir, from: t.pos, to: t.to, phase, progress: 0, auto, grab });
       return true;
     },
-    [flipTarget, closeBook, crossFade]
+    [flipTarget, closeBook, crossFade, clearAyahInteraction]
   );
 
   const navigateByIntent = useCallback(
@@ -309,10 +405,28 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   }, [flip]);
 
   /** Direct jump (modals, panel): no flip animation, straight to the page. */
-  const jumpTo = useCallback((p: number) => {
+  const jumpTo = useCallback((p: number, verseKey: VerseKey | null = null) => {
     setFlip(null);
+    setHoveredVerseKey(null);
+    setFocusedVerseKey(null);
+    setAyahMenu(null);
+    setSelectedVerseKey(verseKey);
+    menuTriggerRef.current = null;
     setPage(clampPage(p));
   }, []);
+
+  /**
+   * Search result → exact Mushaf page. Closes the overlay, then jumps directly
+   * (no flipping through intermediate pages). Pages are images with no per-ayah
+   * DOM, so we navigate to the page precisely rather than outlining the ayah.
+   */
+  const handleSearchNavigate = useCallback(
+    (target: VerseNavigationTarget) => {
+      setSearchOpen(false);
+      jumpTo(target.page, target.ayahKey as VerseKey);
+    },
+    [jumpTo]
+  );
 
   // Safety net: settle even if transitionend never fires (hidden tab, etc.).
   useEffect(() => {
@@ -392,20 +506,27 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   // Keep URL, title and last-read position on the settled page. replaceState
   // (not router.push): individual flips shouldn't pile up in browser history.
   useEffect(() => {
-    window.history.replaceState(null, "", `/page/${page}`);
+    const nextUrl = new URL(window.location.href);
+    nextUrl.pathname = `/page/${page}`;
+    if (selectedVerseKey) nextUrl.searchParams.set("ayah", selectedVerseKey);
+    else nextUrl.searchParams.delete("ayah");
+    window.history.replaceState(null, "", `${nextUrl.pathname}${nextUrl.search}`);
     document.title = `المصحف — صفحة ${arNum(page)}`;
     saveLastRead(page);
     if (isAuthenticated) {
       void userApi.updatePreferences({ lastReadPage: page }).catch(() => {});
     }
-  }, [isAuthenticated, page]);
+  }, [isAuthenticated, page, selectedVerseKey]);
 
   useEffect(() => {
     const onPop = () => {
       const m = window.location.pathname.match(/\/page\/(\d+)/);
       if (m) {
+        const candidate = new URL(window.location.href).searchParams.get("ayah");
         setFlip(null);
         setPage(clampPage(Number(m[1])));
+        setSelectedVerseKey(candidate && isVerseKey(candidate) ? candidate : null);
+        setAyahMenu(null);
       }
     };
     window.addEventListener("popstate", onPop);
@@ -472,6 +593,9 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         navigateByIntent(NAVIGATION.arrowRight);
       } else if (e.code === "KeyB" && !e.ctrlKey && !e.metaKey && !e.altKey) {
         toggleBookmark();
+      } else if (e.code === "Slash" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        setSearchOpen(true);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -510,7 +634,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
     };
   }, [navigateByIntent, zoom]);
 
-  usePagePreload(toSpreadStart(page));
+  usePagePreload(pageToSpreadStart(page));
 
   // Re-center the scroll viewport when zooming.
   useEffect(() => {
@@ -528,7 +652,83 @@ export default function Reader({ initialPage }: { initialPage: number }) {
   const zoomIn = () => canZoomIn && setZoom(ZOOM_STEPS[zoomIndex + 1]);
   const zoomOut = () => canZoomOut && setZoom(ZOOM_STEPS[zoomIndex - 1]);
 
-  const s = toSpreadStart(page);
+  const s = pageToSpreadStart(page);
+
+  const runAyahAction = useCallback(
+    async (action: AyahMenuAction) => {
+      const record = ayahMenu?.record;
+      if (!record) return;
+      const visiblePages = single ? [page] : [pageToSpreadStart(page), pageToSpreadStart(page) + 1];
+      const queue = visiblePages
+        .flatMap((visiblePage) => visibleAyahs[visiblePage] ?? [])
+        .map((ayah) => ({ verseKey: ayah.verseKey, pageNumber: ayah.pageNumber }));
+      const ayahRef = { verseKey: record.verseKey, pageNumber: record.pageNumber };
+      const reference = `سورة ${record.surahNumber}، الآية ${record.ayahNumber}`;
+      const copyText = `${record.text.trim()}\n﴿${reference}﴾`;
+      const copyToClipboard = async (text: string) => {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+          return;
+        }
+        const field = document.createElement("textarea");
+        field.value = text;
+        field.style.position = "fixed";
+        field.style.opacity = "0";
+        document.body.appendChild(field);
+        field.select();
+        const copied = document.execCommand("copy");
+        field.remove();
+        if (!copied) throw new Error("Clipboard unavailable.");
+      };
+
+      try {
+        if (action === "play") audio.toggleAyah(ayahRef, queue);
+        else if (action === "repeat") audio.repeatAyah(ayahRef, 3);
+        else if (action === "tafsir") {
+          setTafsirVerseKey(record.verseKey);
+          setTafsirOpen(true);
+        } else if (action === "copy") {
+          await copyToClipboard(copyText);
+          setAyahStatus("تم نسخ الآية.");
+        } else if (action === "bookmark") {
+          const changed = toggleVerseBookmark(record);
+          if (changed) {
+            setAyahStatus(
+              isVerseBookmarked(record.verseKey) ? "تمت إزالة العلامة." : "تم حفظ العلامة."
+            );
+          }
+        } else if (action === "note") {
+          setMarksTarget(record);
+          setMarksOpen(true);
+        } else if (action === "share") {
+          const url = `${window.location.origin}/page/${record.pageNumber}?ayah=${encodeURIComponent(record.verseKey)}`;
+          if (navigator.share) {
+            await navigator.share({ title: reference, text: record.text.trim(), url });
+            setAyahStatus("تمت مشاركة رابط الآية.");
+          } else {
+            await copyToClipboard(url);
+            setAyahStatus("تم نسخ رابط الآية.");
+          }
+        }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setAyahStatus("تعذر تنفيذ الإجراء. حاول مرة أخرى.");
+        }
+      } finally {
+        closeAyahMenu(true, false);
+      }
+    },
+    [
+      audio,
+      ayahMenu,
+      closeAyahMenu,
+      isVerseBookmarked,
+      page,
+      single,
+      toggleVerseBookmark,
+      visibleAyahs,
+    ]
+  );
 
   // RTL book mechanics: the unread stack is on the LEFT. Advancing from
   // (f, f+1) to (t, t+1) lifts the left page — the leaf carries f+1 on its
@@ -629,10 +829,20 @@ export default function Reader({ initialPage }: { initialPage: number }) {
     if (e.target === e.currentTarget && e.propertyName === "transform") resolveFlip();
   };
 
+  const overlayInteractionProps = {
+    hoveredVerseKey,
+    focusedVerseKey,
+    selectedVerseKey,
+    onAyahHover: setHoveredVerseKey,
+    onAyahFocus: setFocusedVerseKey,
+    onAyahActivate: handleAyahActivate,
+    onAyahRecords: handleAyahRecords,
+  };
+
   return (
     <main
       data-reader-theme={readerTheme}
-      data-mushaf-style={mushafStyle}
+      data-mushaf-treatment={mushafTreatment}
       className="reader-canvas relative h-svh w-full select-none overflow-hidden"
     >
       {/* Open-state rendering: unmounted entirely once the book settles
@@ -644,14 +854,14 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         side="right"
         label="الصفحة السابقة"
         onClick={() => navigateByIntent(NAVIGATION.rightButton)}
-        idle={idle && !jumpOpen && !marksOpen && !panelOpen && !tafsirOpen}
+        idle={idle && !jumpOpen && !searchOpen && !marksOpen && !panelOpen && !tafsirOpen}
         hidden={!mushaf.isOpen}
       />
       <NavZone
         side="left"
         label="الصفحة التالية"
         onClick={() => navigateByIntent(NAVIGATION.leftButton)}
-        idle={idle && !jumpOpen && !marksOpen && !panelOpen && !tafsirOpen}
+        idle={idle && !jumpOpen && !searchOpen && !marksOpen && !panelOpen && !tafsirOpen}
         hidden={!mushaf.isOpen}
       />
 
@@ -686,7 +896,11 @@ export default function Reader({ initialPage }: { initialPage: number }) {
                       onTransitionEnd={onLeafTransitionEnd}
                     >
                       <div className="leaf-face absolute inset-0 [backface-visibility:hidden]">
-                        <PageImage page={singleTop} />
+                        <PageImage
+                          page={singleTop}
+                          overlayEnabled={!flip && mushaf.isOpen}
+                          {...overlayInteractionProps}
+                        />
                       </div>
                       <div className="leaf-face absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)]">
                         <PaperBack />
@@ -703,10 +917,18 @@ export default function Reader({ initialPage }: { initialPage: number }) {
               <BookFrame aspectRatio="1244 / 917">
                 <div ref={bookRef} className="absolute inset-0">
                   <div className="absolute inset-y-0 right-0 w-1/2">
-                    <PageImage page={baseRight} />
+                    <PageImage
+                      page={baseRight}
+                      overlayEnabled={!flip && mushaf.isOpen}
+                      {...overlayInteractionProps}
+                    />
                   </div>
                   <div className="absolute inset-y-0 left-0 w-1/2">
-                    <PageImage page={baseLeft} />
+                    <PageImage
+                      page={baseLeft}
+                      overlayEnabled={!flip && mushaf.isOpen}
+                      {...overlayInteractionProps}
+                    />
                   </div>
                   <SpreadShading />
                   {leaf && flip && (
@@ -764,7 +986,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
       {!mushaf.isSettledClosed && (
         <>
       <ReaderToolbar
-        idle={idle && !jumpOpen && !marksOpen && !panelOpen && !tafsirOpen}
+        idle={idle && !jumpOpen && !searchOpen && !marksOpen && !panelOpen && !tafsirOpen}
         hidden={!mushaf.isOpen}
         caption={
           <>
@@ -807,6 +1029,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         onToggleFullscreen={toggleFullscreen}
         onOpenPanel={() => setPanelOpen(true)}
         onOpenTafsir={() => setTafsirOpen((o) => !o)}
+        onOpenSearch={() => setSearchOpen(true)}
       />
 
       <TafsirPanel
@@ -814,6 +1037,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         onClose={() => setTafsirOpen(false)}
         pages={single ? [page] : [s, s + 1]}
         audio={audio}
+        focusVerseKey={tafsirVerseKey}
       />
 
       <AudioMiniBar audio={audio} />
@@ -835,13 +1059,7 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         }}
         marksCount={marks.length}
         readerTheme={readerTheme}
-        onReaderThemeChange={(nextTheme) =>
-          setReaderSettings({ readerTheme: nextTheme })
-        }
-        mushafStyle={mushafStyle}
-        onMushafStyleChange={(nextStyle) =>
-          setReaderSettings({ mushafStyle: nextStyle })
-        }
+        onReaderThemeChange={(nextTheme) => setReaderSettings({ readerTheme: nextTheme })}
         zoom={zoom}
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
@@ -855,9 +1073,17 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         onClose={() => setJumpOpen(false)}
         onSelect={jumpTo}
       />
+      <SearchModal
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onNavigate={handleSearchNavigate}
+      />
       <MarksPanel
         open={marksOpen}
-        onClose={() => setMarksOpen(false)}
+        onClose={() => {
+          setMarksOpen(false);
+          setMarksTarget(null);
+        }}
         marks={marks}
         currentPage={page}
         onGo={jumpTo}
@@ -871,10 +1097,30 @@ export default function Reader({ initialPage }: { initialPage: number }) {
         isAuthenticated={isAuthenticated}
         saving={marksPending}
         onRequireSignIn={openLoginPrompt}
+        targetVerse={marksTarget ?? undefined}
       />
       <SignInPrompt open={loginPromptOpen} onClose={closeLoginPrompt} />
       <LocalMarksMigrationPrompt />
         </>
+      )}
+      {ayahMenu && mushaf.isOpen && !flip && (
+        <AyahContextMenu
+          record={ayahMenu.record}
+          anchor={ayahMenu.anchor}
+          layoutKey={`${zoom}-${isFullscreen}`}
+          bookmarked={isVerseBookmarked(ayahMenu.record.verseKey)}
+          onAction={(action) => void runAyahAction(action)}
+          onClose={handleAyahMenuClose}
+        />
+      )}
+      {ayahStatus && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-20 left-1/2 z-[95] -translate-x-1/2 rounded-full border border-gold/25 bg-sheet/95 px-4 py-2 text-sm text-ink shadow-lg backdrop-blur"
+        >
+          {ayahStatus}
+        </div>
       )}
     </main>
   );

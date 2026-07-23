@@ -23,7 +23,6 @@ export function useSyncedReaderSettings(): [
         if (!alive) return;
         setLocalSettings({
           ...(preferences.readerTheme ? { readerTheme: preferences.readerTheme } : {}),
-          ...(preferences.mushafStyle ? { mushafStyle: preferences.mushafStyle } : {}),
         });
       })
       .catch(() => {});
@@ -39,7 +38,6 @@ export function useSyncedReaderSettings(): [
       void userApi
         .updatePreferences({
           ...(patch.readerTheme ? { readerTheme: patch.readerTheme } : {}),
-          ...(patch.mushafStyle ? { mushafStyle: patch.mushafStyle } : {}),
         })
         .catch(() => {});
     },

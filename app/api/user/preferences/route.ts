@@ -14,7 +14,7 @@ export async function GET() {
   const { supabase, user } = auth.context;
   const { data, error } = await supabase
     .from("user_preferences")
-    .select("reader_theme,mushaf_style,reciter_id,last_read_page,reading_mode")
+    .select("reader_theme,reciter_id,last_read_page,reading_mode")
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -43,7 +43,7 @@ export async function PATCH(request: Request) {
       },
       { onConflict: "user_id" }
     )
-    .select("reader_theme,mushaf_style,reciter_id,last_read_page,reading_mode")
+    .select("reader_theme,reciter_id,last_read_page,reading_mode")
     .single();
 
   if (error) return Response.json({ error: "preferences_update_failed" }, { status: 500 });

@@ -22,7 +22,7 @@ export interface AyahRef {
   pageNumber: number;
 }
 
-export type PlaybackMode = "single-ayah" | "page";
+export type PlaybackMode = "single-ayah" | "repeat-ayah" | "page";
 
 interface PlayerState {
   /** The ayah the player is on — sounding, paused or stopped-at. */
@@ -60,6 +60,8 @@ export interface QuranAudioController extends PlayerState {
    * reading order) gives next/prev something to walk through.
    */
   toggleAyah: (ayah: AyahRef, contextQueue?: AyahRef[]) => void;
+  /** Play one Ayah exactly `count` times using the shared audio element. */
+  repeatAyah: (ayah: AyahRef, count?: number) => void;
   /** Play the given ayahs in order; if page playback is sounding, stop it. */
   togglePage: (queue: AyahRef[]) => void;
   pause: () => void;
@@ -82,6 +84,7 @@ export function useQuranAudio(): QuranAudioController {
   const queueRef = useRef<AyahRef[]>([]);
   const indexRef = useRef(0);
   const modeRef = useRef<PlaybackMode>("single-ayah");
+  const repeatRemainingRef = useRef(0);
   /** verseKey whose mp3 is loaded in the element (resume without refetch). */
   const loadedRef = useRef<string | null>(null);
   // Bumped by every user action; async continuations compare against it.
@@ -156,9 +159,13 @@ export function useQuranAudio(): QuranAudioController {
     advanceRef.current = () => {
       const generation = generationRef.current;
       const next = indexRef.current + 1;
-      if (modeRef.current === "page" && next < queueRef.current.length) {
+      if (modeRef.current === "repeat-ayah" && repeatRemainingRef.current > 1) {
+        repeatRemainingRef.current -= 1;
+        void startAt(indexRef.current, "repeat-ayah", generation);
+      } else if (modeRef.current === "page" && next < queueRef.current.length) {
         void startAt(next, "page", generation);
       } else {
+        repeatRemainingRef.current = 0;
         commit({ isPlaying: false });
       }
     };
@@ -166,6 +173,7 @@ export function useQuranAudio(): QuranAudioController {
 
   const stop = useCallback(() => {
     generationRef.current++;
+    repeatRemainingRef.current = 0;
     haltElement();
     commit({ isLoading: false, isPlaying: false });
   }, [haltElement, commit]);
@@ -174,6 +182,7 @@ export function useQuranAudio(): QuranAudioController {
     generationRef.current++;
     haltElement();
     queueRef.current = [];
+    repeatRemainingRef.current = 0;
     indexRef.current = 0;
     setState(IDLE);
   }, [haltElement]);
@@ -228,12 +237,26 @@ export function useQuranAudio(): QuranAudioController {
           ? contextQueue
           : [ayah];
       generationRef.current++;
+      repeatRemainingRef.current = 0;
       audioRef.current?.pause();
       queueRef.current = [...queue];
       const index = queue.findIndex((a) => a.verseKey === ayah.verseKey);
       void startAt(index, "single-ayah", generationRef.current);
     },
     [state.currentVerseKey, state.isPlaying, state.isLoading, stop, resume, startAt]
+  );
+
+  const repeatAyah = useCallback(
+    (ayah: AyahRef, count = 3) => {
+      const repetitions = Math.max(1, Math.trunc(count));
+      generationRef.current++;
+      audioRef.current?.pause();
+      queueRef.current = [ayah];
+      indexRef.current = 0;
+      repeatRemainingRef.current = repetitions;
+      void startAt(0, "repeat-ayah", generationRef.current);
+    },
+    [startAt]
   );
 
   const togglePage = useCallback(
@@ -244,6 +267,7 @@ export function useQuranAudio(): QuranAudioController {
       }
       if (queue.length === 0) return;
       generationRef.current++;
+      repeatRemainingRef.current = 0;
       audioRef.current?.pause();
       queueRef.current = [...queue];
       void startAt(0, "page", generationRef.current);
@@ -267,6 +291,7 @@ export function useQuranAudio(): QuranAudioController {
     ...state,
     reciter,
     toggleAyah,
+    repeatAyah,
     togglePage,
     pause,
     resume,

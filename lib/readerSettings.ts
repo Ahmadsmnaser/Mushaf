@@ -3,10 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   DEFAULT_READER_SETTINGS,
-  type MushafStyle,
   type ReaderSettings,
   type ReaderTheme,
-  isMushafStyle,
   isReaderTheme,
 } from "./readerConfig";
 import { KEYS, readJSON, writeJSON } from "./storage";
@@ -15,13 +13,13 @@ export {
   CURRENT_MUSHAF_SOURCE_ID,
   DEFAULT_READER_SETTINGS,
   MUSHAF_SOURCES,
-  MUSHAF_STYLES,
-  MUSHAF_STYLE_OPTIONS,
   READER_THEMES,
   READER_THEME_OPTIONS,
+  THEME_MUSHAF_TREATMENTS,
+  getMushafTreatment,
   formatMushafPageUrl,
   type MushafSourceId,
-  type MushafStyle,
+  type MushafTreatment,
   type ReaderSettings,
   type ReaderTheme,
 } from "./readerConfig";
@@ -39,15 +37,24 @@ function readReaderTheme(): ReaderTheme {
   return normalizeReaderTheme(legacy) ?? DEFAULT_READER_SETTINGS.readerTheme;
 }
 
-function readMushafStyle(): MushafStyle {
-  return readJSON<MushafStyle>(
-    KEYS.mushafStyle,
-    DEFAULT_READER_SETTINGS.mushafStyle,
-    isMushafStyle
-  );
+/**
+ * Migrate away from the removed independent Mushaf-style feature. Those keys
+ * described a user choice that no longer exists (the Mushaf treatment is now
+ * derived from the theme), so drop them. Purely a cleanup — reading never
+ * depended on them, so their presence was already harmless.
+ */
+function migrateLegacyAppearance(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(KEYS.mushafStyle);
+    window.localStorage.removeItem(KEYS.syncMushafWithTheme);
+  } catch {
+    // storage blocked — nothing to clean up, and reading is unaffected.
+  }
 }
 
-/** Reader environment and Mushaf presentation settings, persisted locally. */
+/** Reader environment settings, persisted locally. The theme is the only value
+ *  the user controls; everything about the Mushaf's look derives from it. */
 export function useReaderSettings(): [
   ReaderSettings,
   (patch: Partial<ReaderSettings>) => void,
@@ -56,13 +63,10 @@ export function useReaderSettings(): [
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const next = {
-        readerTheme: readReaderTheme(),
-        mushafStyle: readMushafStyle(),
-      };
+      migrateLegacyAppearance();
+      const next: ReaderSettings = { readerTheme: readReaderTheme() };
       setSettings(next);
       writeJSON(KEYS.readerTheme, next.readerTheme);
-      writeJSON(KEYS.mushafStyle, next.mushafStyle);
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -71,7 +75,6 @@ export function useReaderSettings(): [
     setSettings((current) => {
       const next = { ...current, ...patch };
       writeJSON(KEYS.readerTheme, next.readerTheme);
-      writeJSON(KEYS.mushafStyle, next.mushafStyle);
       return next;
     });
   }, []);

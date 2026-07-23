@@ -96,6 +96,7 @@ export default function ReaderToolbar({
   onToggleFullscreen,
   onOpenPanel,
   onOpenTafsir,
+  onOpenSearch,
 }: {
   idle: boolean;
   hidden?: boolean;
@@ -116,6 +117,7 @@ export default function ReaderToolbar({
   onToggleFullscreen: () => void;
   onOpenPanel: () => void;
   onOpenTafsir: () => void;
+  onOpenSearch: () => void;
 }) {
   return (
     <div
@@ -151,6 +153,22 @@ export default function ReaderToolbar({
         >
           <Icon d={paths.home} />
         </Link>
+
+        <ToolButton label="البحث (/)" onClick={onOpenSearch}>
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-[18px] w-[18px]"
+            aria-hidden
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21l-4.35-4.35" />
+          </svg>
+        </ToolButton>
 
         <Divider />
 

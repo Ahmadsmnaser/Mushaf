@@ -99,6 +99,16 @@ export function useMarks() {
     [marks]
   );
 
+  const bookmarkedVerseKeys = useMemo(
+    () =>
+      new Set(
+        marks
+          .filter((mark) => mark.type === "bookmark" && Boolean(mark.verseKey))
+          .map((mark) => mark.verseKey as string)
+      ),
+    [marks]
+  );
+
   const isPageBookmarked = useCallback(
     (pageNumber: number) => bookmarkedPages.has(pageNumber),
     [bookmarkedPages]
@@ -165,15 +175,49 @@ export function useMarks() {
 
   const togglePageBookmark = useCallback(
     (pageNumber: number) => {
-      if (requireLogin()) return;
+      if (requireLogin()) return false;
       const existing = marks.find(
         (m) => m.type === "bookmark" && m.pageNumber === pageNumber && !m.verseKey
       );
       if (existing) {
         removeCloudMark(existing.id);
-        return;
+        return true;
       }
       createCloudMark(createPageMark(pageNumber, "bookmark"));
+      return true;
+    },
+    [createCloudMark, marks, removeCloudMark, requireLogin]
+  );
+
+  const isVerseBookmarked = useCallback(
+    (verseKey: string) => bookmarkedVerseKeys.has(verseKey),
+    [bookmarkedVerseKeys]
+  );
+
+  const toggleVerseBookmark = useCallback(
+    ({
+      pageNumber,
+      verseKey,
+      surahNumber,
+      ayahNumber,
+    }: {
+      pageNumber: number;
+      verseKey: string;
+      surahNumber: number;
+      ayahNumber: number;
+    }) => {
+      if (requireLogin()) return false;
+      const existing = marks.find(
+        (mark) => mark.type === "bookmark" && mark.verseKey === verseKey
+      );
+      if (existing) {
+        removeCloudMark(existing.id);
+        return true;
+      }
+      createCloudMark(
+        createPageMark(pageNumber, "bookmark", { verseKey, surahNumber, ayahNumber })
+      );
+      return true;
     },
     [createCloudMark, marks, removeCloudMark, requireLogin]
   );
@@ -276,6 +320,8 @@ export function useMarks() {
     marksForPage,
     isPageBookmarked,
     togglePageBookmark,
+    isVerseBookmarked,
+    toggleVerseBookmark,
     upsertNote,
     exportStorage,
     importStorage,

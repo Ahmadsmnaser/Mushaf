@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import Reader from "@/components/reader/Reader";
 import { PAGE_COUNT } from "@/lib/mushaf/source";
 import { SITE_DESCRIPTION, SITE_NAME } from "@/lib/site";
+import { isVerseKey, type VerseKey } from "@/lib/mushaf/ayahRegions";
+import { pageContainsVerse } from "@/lib/mushaf/ayahPageIndex.server";
 
 const arNum = (n: number) => n.toLocaleString("ar-EG");
 
@@ -35,10 +37,16 @@ export async function generateMetadata({
 
 export default async function ReaderPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ n: string }>;
+  searchParams: Promise<{ ayah?: string | string[] }>;
 }) {
   const n = Number((await params).n);
   if (!Number.isInteger(n) || n < 1 || n > PAGE_COUNT) redirect("/page/1");
-  return <Reader initialPage={n} />;
+  const rawAyah = (await searchParams).ayah;
+  const candidate = Array.isArray(rawAyah) ? rawAyah[0] : rawAyah;
+  const initialAyahKey: VerseKey | null =
+    candidate && isVerseKey(candidate) && pageContainsVerse(n, candidate) ? candidate : null;
+  return <Reader initialPage={n} initialAyahKey={initialAyahKey} />;
 }

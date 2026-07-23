@@ -28,6 +28,10 @@ export const KEYS = {
   marks: "mushaf.v1.marks",
   theme: "mushaf.v1.theme",
   readerTheme: "mushaf.v2.readerTheme",
+  // Legacy keys from the removed independent Mushaf-style feature. Retained
+  // only so the migration in readerSettings.ts can delete them; nothing writes
+  // them anymore.
   mushafStyle: "mushaf.v2.mushafStyle",
+  syncMushafWithTheme: "mushaf.v2.syncMushafWithTheme",
   marksMigrationDone: "mushaf.v1.marksMigrationDone",
 } as const;

@@ -1,0 +1,75 @@
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useQuranAudio } from "@/lib/audio/useQuranAudio";
+import { resolveAyahAudioUrl } from "@/lib/audio/service";
+
+vi.mock("@/lib/audio/service", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/audio/service")>(
+    "@/lib/audio/service"
+  );
+  return {
+    ...actual,
+    resolveAyahAudioUrl: vi.fn().mockResolvedValue("https://audio.test/1.mp3"),
+  };
+});
+
+class FakeAudio extends EventTarget {
+  preload = "";
+  currentSrc = "";
+  private source = "";
+  play = vi.fn(async () => {});
+  pause = vi.fn();
+
+  get src() {
+    return this.source;
+  }
+
+  set src(value: string) {
+    this.source = value;
+    this.currentSrc = value;
+  }
+
+  removeAttribute(name: string) {
+    if (name === "src") {
+      this.source = "";
+      this.currentSrc = "";
+    }
+  }
+}
+
+describe("useQuranAudio repetition", () => {
+  let instances: FakeAudio[];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    instances = [];
+    vi.stubGlobal(
+      "Audio",
+      class extends FakeAudio {
+        constructor() {
+          super();
+          instances.push(this);
+        }
+      }
+    );
+  });
+
+  it("plays the exact Ayah three times with one shared audio element", async () => {
+    const { result } = renderHook(() => useQuranAudio());
+    act(() => result.current.repeatAyah({ verseKey: "1:1", pageNumber: 1 }, 3));
+    await waitFor(() => expect(resolveAyahAudioUrl).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(instances[0].play).toHaveBeenCalledTimes(1));
+
+    act(() => instances[0].dispatchEvent(new Event("ended")));
+    await waitFor(() => expect(resolveAyahAudioUrl).toHaveBeenCalledTimes(2));
+    act(() => instances[0].dispatchEvent(new Event("ended")));
+    await waitFor(() => expect(resolveAyahAudioUrl).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(instances[0].play).toHaveBeenCalledTimes(3));
+    act(() => instances[0].dispatchEvent(new Event("ended")));
+
+    await waitFor(() => expect(result.current.isPlaying).toBe(false));
+    expect(instances).toHaveLength(1);
+    expect(result.current.currentVerseKey).toBe("1:1");
+    expect(result.current.playbackMode).toBe("repeat-ayah");
+  });
+});

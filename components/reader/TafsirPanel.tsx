@@ -50,13 +50,21 @@ function Entry({
   entry,
   playState,
   onTogglePlay,
+  focused,
 }: {
   entry: TafsirEntry;
   playState: AyahPlayState;
   onTogglePlay: () => void;
+  focused: boolean;
 }) {
   return (
-    <article className="py-4 first:pt-1">
+    <article
+      data-tafsir-verse={entry.verseKey}
+      tabIndex={-1}
+      className={`scroll-mt-16 rounded-lg py-4 outline-none first:pt-1 ${
+        focused ? "bg-accent/[.08] ring-1 ring-accent/25" : ""
+      }`}
+    >
       <h4 className="flex items-center gap-2.5">
         <AyahMarker n={entry.ayahNumber} />
         <span className="font-display text-[17px] leading-none text-accent">
@@ -82,11 +90,13 @@ function PageSection({
   showPage,
   ayahPlayState,
   onToggleAyah,
+  focusVerseKey,
 }: {
   data: PageTafsir;
   showPage: boolean;
   ayahPlayState: (verseKey: string) => AyahPlayState;
   onToggleAyah: (ayah: AyahRef) => void;
+  focusVerseKey: string | null;
 }) {
   return (
     // scroll-mt clears the sticky page-nav row when jumping here from it.
@@ -112,6 +122,7 @@ function PageSection({
               onTogglePlay={() =>
                 onToggleAyah({ verseKey: e.verseKey, pageNumber: data.pageNumber })
               }
+              focused={focusVerseKey === e.verseKey}
             />
           ))}
         </div>
@@ -145,6 +156,7 @@ export default function TafsirPanel({
   onClose,
   pages,
   audio,
+  focusVerseKey = null,
 }: {
   open: boolean;
   onClose: () => void;
@@ -152,6 +164,7 @@ export default function TafsirPanel({
   pages: number[];
   /** Shared recitation player, owned by the Reader (mini-bar uses it too). */
   audio: QuranAudioController;
+  focusVerseKey?: string | null;
 }) {
   const { state, sources, sourceId, source, setSource, retry } = useTafsir(pages, open);
 
@@ -178,6 +191,18 @@ export default function TafsirPanel({
     // New spread (or reopen): back to the top.
     scrollRef.current?.scrollTo({ top: 0 });
   }, [pagesKey, sourceId, open]);
+
+  useEffect(() => {
+    if (!open || !focusVerseKey || state.status !== "success") return;
+    const frame = requestAnimationFrame(() => {
+      const entry = scrollRef.current?.querySelector<HTMLElement>(
+        `[data-tafsir-verse="${focusVerseKey}"]`
+      );
+      entry?.scrollIntoView({ behavior: "smooth", block: "start" });
+      entry?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focusVerseKey, open, state.status]);
 
   // While a pill-click smooth scroll is in flight, its intermediate scroll
   // events must not flip the pills back to the section being passed over.
@@ -402,6 +427,7 @@ export default function TafsirPanel({
                   showPage={state.data.length > 1}
                   ayahPlayState={ayahPlayState}
                   onToggleAyah={toggleAyahInContext}
+                  focusVerseKey={focusVerseKey}
                 />
               ))}
             </>

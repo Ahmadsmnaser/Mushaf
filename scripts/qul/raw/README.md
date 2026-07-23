@@ -17,3 +17,7 @@ Expected files:
 
 The app never reads these files at runtime. The build script converts them into
 static files under `lib/mushaf/data/` and `public/data/`.
+
+After the public search index exists, `node scripts/build-ayah-page-index.mjs`
+combines QUL text with the verified compact KSU page/key map and regenerates
+the page-scoped text files used by the Ayah overlay and reader services.
