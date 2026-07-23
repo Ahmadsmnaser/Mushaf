@@ -821,6 +821,13 @@ body {
   background: var(--canvas);
 }
 
+/* Auto page-turn waiting on the target spread to decode: a quiet busy cursor
+   while the current spread stays fully on screen. No dimming — the reader must
+   never flash or blank; this only signals that the press registered. */
+.reader-canvas[data-nav-loading] {
+  cursor: progress;
+}
+
 .reader-canvas::before {
   content: "";
   position: absolute;

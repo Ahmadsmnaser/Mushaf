@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getPageImageUrl, PAGE_HEIGHT, PAGE_WIDTH } from "@/lib/mushaf/source";
+import { isPageDecoded } from "@/lib/mushaf/spreadLoader";
 import type { AyahOverlayRecord, VerseKey } from "@/lib/mushaf/ayahRegions";
 import AyahOverlay, { type MenuAnchorRect } from "./AyahOverlay";
 
@@ -61,7 +62,15 @@ export default function PageImage({
     else setStatus("loading");
   }, [page, attempt]);
 
-  if (status === "error") {
+  // When the shared loader has already decoded this page, it can paint from the
+  // cached bitmap on this very render — so treat it as ready during render (not
+  // one effect-frame later). This removes the skeleton/opacity flash at the
+  // flip-commit seam, where the settled slot's src swaps to the incoming page
+  // the loader gated on. `status` still drives pages that weren't pre-decoded.
+  const display: Status =
+    status === "error" ? "error" : isPageDecoded(page) || status === "ready" ? "ready" : "loading";
+
+  if (display === "error") {
     return (
       <PageSurface>
         <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-ink-soft">
@@ -98,13 +107,13 @@ export default function PageImage({
         onError={() => setStatus("error")}
         style={{ filter: "var(--mushaf-image-filter)" }}
         className={`h-full w-full object-contain transition-opacity duration-200 ${
-          status === "ready" ? "opacity-100" : "opacity-0"
+          display === "ready" ? "opacity-100" : "opacity-0"
         }`}
       />
       <AyahOverlay
         page={page}
         enabled={overlayEnabled}
-        imageReady={status === "ready"}
+        imageReady={display === "ready"}
         hoveredVerseKey={hoveredVerseKey}
         focusedVerseKey={focusedVerseKey}
         selectedVerseKey={selectedVerseKey}
@@ -113,7 +122,7 @@ export default function PageImage({
         onActivate={onAyahActivate}
         onRecords={onAyahRecords}
       />
-      {status === "loading" && (
+      {display === "loading" && (
         <div className="absolute inset-2 animate-pulse rounded-sm bg-ink-soft/5" />
       )}
     </PageSurface>

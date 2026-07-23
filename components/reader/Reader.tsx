@@ -14,6 +14,7 @@ import { useMarks } from "@/lib/useMarks";
 import { useSyncedReaderSettings } from "@/lib/useSyncedReaderSettings";
 import { useAutoHideToolbar } from "@/lib/useAutoHideToolbar";
 import { usePagePreload } from "@/lib/usePagePreload";
+import { loadSpread, isSpreadDecoded } from "@/lib/mushaf/spreadLoader";
 import { useMushafState } from "@/lib/useMushafState";
 import { useQuranAudio } from "@/lib/audio/useQuranAudio";
 import ReaderToolbar from "@/components/chrome/ReaderToolbar";
@@ -126,6 +127,9 @@ export default function Reader({
   const [panelOpen, setPanelOpen] = useState(false);
   const [tafsirOpen, setTafsirOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // True only while an auto page-turn is waiting on the target spread to decode
+  // — drives a quiet busy cue on the canvas; the current spread stays visible.
+  const [navLoading, setNavLoading] = useState(false);
   const [hoveredVerseKey, setHoveredVerseKey] = useState<VerseKey | null>(null);
   const [focusedVerseKey, setFocusedVerseKey] = useState<VerseKey | null>(null);
   const [selectedVerseKey, setSelectedVerseKey] = useState<VerseKey | null>(initialAyahKey);
@@ -178,6 +182,12 @@ export default function Reader({
   const dragRef = useRef<{ x0: number; lastX: number; t0: number; w: number } | null>(null);
   const wheelUnlockRef = useRef<number | null>(null);
   const fadeRef = useRef(false); // reduced-motion crossfade in flight
+  // Programmatic-navigation image gate: while the target spread decodes we keep
+  // the current spread on screen. navBusyRef ignores further auto-nav input for
+  // that window (same policy as ignoring input mid-flip); navGenRef is the
+  // stale-completion guard so a slow load can never commit after a newer intent.
+  const navBusyRef = useRef(false);
+  const navGenRef = useRef(0);
   const pageRef = useRef(page);
   const flipRef = useRef(flip);
   const mushafOpenRef = useRef(true);
@@ -370,14 +380,55 @@ export default function Reader({
       if (
         flipRef.current ||
         fadeRef.current ||
+        navBusyRef.current ||
         modalOpenRef.current ||
         !mushafOpenRef.current
       )
         return;
       const dir: FlipDir = intent === "next" ? "next" : "prev";
-      beginFlip(dir, "animating", true, "middle");
+      const t = flipTarget(dir);
+      // At a bound there are no incoming images — let beginFlip close the book.
+      if (!t) {
+        beginFlip(dir, "animating", true, "middle");
+        return;
+      }
+      const pages = singleRef.current ? [t.to] : [t.to, t.to + 1];
+      // Fast path: the whole target spread is already decoded, so flip now with
+      // no delay — preserves the instant feel for the common (preloaded) case.
+      if (isSpreadDecoded(pages)) {
+        beginFlip(dir, "animating", true, "middle");
+        return;
+      }
+      // Slow path: hold the current spread and decode the target first. Only
+      // once every incoming image can paint do we begin the visible turn, so a
+      // page never opens onto a blank or half-loaded sheet.
+      navBusyRef.current = true;
+      setNavLoading(true);
+      const gen = ++navGenRef.current;
+      void loadSpread(pages)
+        .then(() => {
+          if (gen !== navGenRef.current) return; // superseded by newer intent
+          if (
+            flipRef.current ||
+            fadeRef.current ||
+            modalOpenRef.current ||
+            !mushafOpenRef.current
+          )
+            return;
+          beginFlip(dir, "animating", true, "middle");
+        })
+        .catch(() => {
+          // Load failed: keep the current spread untouched. Re-navigating (or
+          // PageImage's own retry) can attempt the fetch again.
+        })
+        .finally(() => {
+          if (gen === navGenRef.current) {
+            navBusyRef.current = false;
+            setNavLoading(false);
+          }
+        });
     },
-    [beginFlip]
+    [beginFlip, flipTarget]
   );
 
   const navigateNext = useCallback(() => navigateByIntent("next"), [navigateByIntent]);
@@ -404,15 +455,41 @@ export default function Reader({
     };
   }, [flip]);
 
-  /** Direct jump (modals, panel): no flip animation, straight to the page. */
+  /**
+   * Direct jump (modals, panel, search): no flip animation. The current spread
+   * stays visible while the destination spread decodes, then the swap happens
+   * in one step — so a jump never lands on a blank sheet. A requested jump is
+   * still honoured if its images fail (unlike an incremental turn); PageImage's
+   * own retry covers that. The latest intent wins via navGenRef.
+   */
   const jumpTo = useCallback((p: number, verseKey: VerseKey | null = null) => {
-    setFlip(null);
-    setHoveredVerseKey(null);
-    setFocusedVerseKey(null);
-    setAyahMenu(null);
-    setSelectedVerseKey(verseKey);
-    menuTriggerRef.current = null;
-    setPage(clampPage(p));
+    const target = clampPage(p);
+    const start = pageToSpreadStart(target);
+    const pages = singleRef.current ? [target] : [start, start + 1];
+    const commit = () => {
+      setFlip(null);
+      setHoveredVerseKey(null);
+      setFocusedVerseKey(null);
+      setAyahMenu(null);
+      setSelectedVerseKey(verseKey);
+      menuTriggerRef.current = null;
+      setPage(target);
+    };
+    if (isSpreadDecoded(pages)) {
+      commit();
+      return;
+    }
+    navBusyRef.current = true;
+    setNavLoading(true);
+    const gen = ++navGenRef.current;
+    void loadSpread(pages)
+      .catch(() => {}) // honour the jump regardless — retry UI handles failures
+      .finally(() => {
+        if (gen !== navGenRef.current) return; // superseded by a newer intent
+        commit();
+        navBusyRef.current = false;
+        setNavLoading(false);
+      });
   }, []);
 
   /**
@@ -852,6 +929,8 @@ export default function Reader({
     <main
       data-reader-theme={readerTheme}
       data-mushaf-treatment={mushafTreatment}
+      data-nav-loading={navLoading ? "" : undefined}
+      aria-busy={navLoading || undefined}
       className="reader-canvas relative h-svh w-full select-none overflow-hidden"
     >
       {/* Open-state rendering: unmounted entirely once the book settles
