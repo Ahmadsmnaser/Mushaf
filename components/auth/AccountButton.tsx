@@ -24,7 +24,7 @@ export default function AccountButton({
   const base =
     "pressable inline-flex items-center justify-center gap-2 rounded-full border text-sm transition-colors disabled:cursor-default disabled:opacity-60";
   const className = cover
-    ? `${base} border-gold-soft/35 bg-gold-soft/10 px-4 py-2 text-paper hover:bg-gold-soft/20`
+    ? `${base} home-account-button px-4 py-2`
     : `${base} border-gold/25 bg-sheet/70 px-3 py-2 text-ink-soft hover:border-accent/40 hover:text-accent`;
 
   if (!auth.isConfigured) {
@@ -90,7 +90,7 @@ export default function AccountButton({
 
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <span className={cover ? "max-w-36 truncate text-sm text-paper/85" : "max-w-36 truncate text-sm text-ink"}>
+      <span className={cover ? "home-account-name max-w-36 truncate text-sm" : "max-w-36 truncate text-sm text-ink"}>
         {name}
       </span>
       {auth.user.avatarUrl ? (

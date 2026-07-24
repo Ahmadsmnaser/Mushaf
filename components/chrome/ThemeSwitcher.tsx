@@ -27,7 +27,7 @@ export default function ThemeSwitcher({
         >
           <span
             aria-hidden
-            className="h-6 w-6 rounded-full border border-black/15 shadow-inner"
+            className="h-6 w-6 rounded-full border border-ink/15 shadow-inner"
             style={{ backgroundColor: t.swatch }}
           />
           <span className="text-[10px] text-ink-soft">{t.label}</span>

@@ -18,7 +18,7 @@ export default function SignInPrompt({
         <p className="text-sm leading-7 text-ink">
           سجّل الدخول لحفظ علاماتك وملاحظاتك ومزامنتها بين أجهزتك
         </p>
-        {auth.error && <p className="mt-2 text-xs text-red-700">{auth.error}</p>}
+        {auth.error && <p className="mt-2 text-xs text-danger">{auth.error}</p>}
         <div className="mt-5 flex flex-wrap justify-end gap-2">
           <button
             type="button"
