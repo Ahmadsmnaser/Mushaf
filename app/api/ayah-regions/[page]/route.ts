@@ -5,6 +5,8 @@ import {
   validatePageNumber,
   type AyahRegionResponse,
 } from "@/lib/mushaf/ayahRegions";
+import { getKsuContinuationVerseKeys } from "@/lib/mushaf/ayahRegionContinuations.server";
+import { getKsuOpeningRowCounts } from "@/lib/mushaf/ayahRegionOpenings.server";
 import { getExpectedPageAyahs } from "@/lib/mushaf/ayahPageIndex.server";
 
 const CACHE_SECONDS = 60 * 60 * 24 * 30;
@@ -42,7 +44,11 @@ export async function GET(
     const records = reconstructKsuAyahRegions(
       pageNumber,
       getExpectedPageAyahs(pageNumber),
-      payload
+      payload,
+      {
+        continuationVerseKeys: getKsuContinuationVerseKeys(),
+        openingRowCounts: getKsuOpeningRowCounts(),
+      }
     );
     const body: AyahRegionResponse = {
       pageNumber,

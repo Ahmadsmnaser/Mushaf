@@ -798,27 +798,11 @@ body {
   background: var(--mushaf-image-slot-bg);
 }
 
-.ayah-region {
-  fill: transparent;
-  stroke: transparent;
+/* The full-line-pitch pointer target. The visible inset band (.ayah-region-fill)
+   and all of its state colours are applied inline from React (see AyahOverlay),
+   so the highlight never depends on this stylesheet being fresh or loaded. */
+.ayah-region-hit {
   cursor: pointer;
-  transition: fill 120ms ease, stroke 120ms ease;
-}
-
-.ayah-region[data-state="hovered"] {
-  fill: color-mix(in srgb, var(--accent) 16%, transparent);
-}
-
-.ayah-region[data-state="focused"] {
-  fill: color-mix(in srgb, var(--accent) 19%, transparent);
-  stroke: color-mix(in srgb, var(--accent) 72%, transparent);
-  stroke-width: 1.5;
-}
-
-.ayah-region[data-state="selected"] {
-  fill: color-mix(in srgb, var(--accent) 25%, transparent);
-  stroke: color-mix(in srgb, var(--accent) 58%, transparent);
-  stroke-width: 1;
 }
 
 .ayah-debug-label {

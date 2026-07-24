@@ -10,7 +10,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "verify:coordinates": "tsx scripts/verify-ayah-coordinates.ts"
+    "verify:coordinates": "tsx scripts/verify-ayah-coordinates.ts",
+    "render:overlay-audit": "tsx scripts/render-ayah-overlay-audit.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

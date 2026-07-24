@@ -55,10 +55,37 @@ describe("AyahOverlay", () => {
     await waitFor(() => expect(props.onRecords).toHaveBeenCalledWith(1, records));
     expect(document.querySelector("svg")).not.toBeInTheDocument();
     rerender(<AyahOverlay {...props} imageReady hoveredVerseKey={"1:1" as VerseKey} />);
-    const regions = document.querySelectorAll(".ayah-region");
-    expect(regions).toHaveLength(2);
-    expect([...regions].every((region) => region.getAttribute("data-state") === "hovered")).toBe(true);
-    fireEvent.click(regions[1]);
+    // Each segment renders a visible inset band plus a full-height hit target.
+    const fills = document.querySelectorAll(".ayah-region-fill");
+    const hits = document.querySelectorAll(".ayah-region-hit");
+    expect(fills).toHaveLength(2);
+    expect(hits).toHaveLength(2);
+    // Hit target is intrinsically transparent (never paints, even with no CSS).
+    expect([...hits].every((h) => h.getAttribute("fill") === "transparent")).toBe(true);
+    expect([...fills].every((f) => f.getAttribute("data-state") === "hovered")).toBe(true);
+    // The hovered strip's fill is applied inline (not via a stylesheet), so it is
+    // visible regardless of whether globals.css is fresh — guards the "no hover
+    // strip" regression.
+    expect(
+      [...fills].every((f) => {
+        const fill = (f as SVGElement).style.fill;
+        return fill.includes("color-mix") && fill.includes("--accent");
+      })
+    ).toBe(true);
+    expect([...fills].every((f) => f.getAttribute("rx") === "6")).toBe(true);
+    expect([...fills].every((f) => f.getAttribute("ry") === "6")).toBe(true);
+    // The visible band is shorter than, and vertically centred within, its hit target.
+    fills.forEach((fill, index) => {
+      const hit = hits[index];
+      const fh = Number(fill.getAttribute("height"));
+      const hh = Number(hit.getAttribute("height"));
+      expect(fh).toBeLessThan(hh);
+      const fillMid = Number(fill.getAttribute("y")) + fh / 2;
+      const hitMid = Number(hit.getAttribute("y")) + hh / 2;
+      expect(fillMid).toBeCloseTo(hitMid);
+    });
+    // The whole line pitch stays clickable via the full-height hit target.
+    fireEvent.click(hits[1]);
     expect(props.onActivate).toHaveBeenCalledWith(records[0], expect.any(Object), null);
   });
 

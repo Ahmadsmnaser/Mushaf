@@ -23,6 +23,37 @@ const copyRect = (rect: DOMRect): MenuAnchorRect => ({
   height: rect.height,
 });
 
+// The reconstructed region is a full line-pitch band (the pointer target). The
+// visible highlight is drawn as a slightly shorter band centred on it, so that
+// stacked segments of a long multi-line Ayah stay visually separated instead of
+// fusing into one bulky block. Interaction geometry is unchanged.
+const VISUAL_BAND_SCALE = 0.78;
+const VISUAL_CORNER_RADIUS = 6;
+
+// The highlight appearance is applied inline from React state (not from a CSS
+// class) so a stale or not-yet-loaded stylesheet can never blank the hover strip
+// or fall back to the SVG default black fill. Values stay theme-aware via
+// --accent. Kept in sync with the .ayah-region-fill rules in globals.css.
+type RegionState = "idle" | "hovered" | "focused" | "selected";
+const REGION_FILL: Record<RegionState, string> = {
+  idle: "transparent",
+  hovered: "color-mix(in srgb, var(--accent) 14%, transparent)",
+  focused: "color-mix(in srgb, var(--accent) 17%, transparent)",
+  selected: "color-mix(in srgb, var(--accent) 21%, transparent)",
+};
+const REGION_STROKE: Record<RegionState, string> = {
+  idle: "transparent",
+  hovered: "transparent",
+  focused: "color-mix(in srgb, var(--accent) 62%, transparent)",
+  selected: "color-mix(in srgb, var(--accent) 52%, transparent)",
+};
+const REGION_STROKE_WIDTH: Record<RegionState, number> = {
+  idle: 0,
+  hovered: 0,
+  focused: 1.25,
+  selected: 1,
+};
+
 export default function AyahOverlay({
   page,
   enabled,
@@ -110,7 +141,7 @@ export default function AyahOverlay({
       >
         {records.flatMap((record) =>
           record.regions.map((region, index) => {
-            const state =
+            const state: RegionState =
               selectedVerseKey === record.verseKey
                 ? "selected"
                 : focusedVerseKey === record.verseKey
@@ -118,8 +149,31 @@ export default function AyahOverlay({
                   : hoveredVerseKey === record.verseKey
                     ? "hovered"
                     : "idle";
+            const visualHeight = region.height * VISUAL_BAND_SCALE;
+            const visualY = region.y + (region.height - visualHeight) / 2;
             return (
               <g key={`${record.verseKey}-${index}`}>
+                {/* Polished display band — inset so adjacent lines stay separated.
+                    Appearance is applied inline from state so it renders correctly
+                    even if the stylesheet is stale or has not loaded yet. */}
+                <rect
+                  x={region.x}
+                  y={visualY}
+                  width={region.width}
+                  height={visualHeight}
+                  rx={VISUAL_CORNER_RADIUS}
+                  ry={VISUAL_CORNER_RADIUS}
+                  className="ayah-region-fill pointer-events-none"
+                  data-state={state}
+                  style={{
+                    fill: REGION_FILL[state],
+                    stroke: REGION_STROKE[state],
+                    strokeWidth: REGION_STROKE_WIDTH[state],
+                    transition: "fill 140ms ease, stroke 140ms ease",
+                    shapeRendering: "geometricPrecision",
+                  }}
+                />
+                {/* Full line-pitch hit target — keeps the whole Ayah clickable. */}
                 <rect
                   ref={(element) => {
                     const key = `${record.verseKey}-${index}`;
@@ -130,9 +184,9 @@ export default function AyahOverlay({
                   y={region.y}
                   width={region.width}
                   height={region.height}
-                  rx={2}
-                  className="ayah-region pointer-events-auto"
-                  data-state={state}
+                  fill="transparent"
+                  stroke="transparent"
+                  className="ayah-region-hit pointer-events-auto"
                   data-verse-key={record.verseKey}
                   data-segment-index={index}
                   style={{ touchAction: "manipulation" }}
