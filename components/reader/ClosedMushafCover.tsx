@@ -21,12 +21,14 @@ export default function ClosedMushafCover({
   phase,
   side,
   onOpen,
+  busy = false,
 }: {
   phase: "closing" | "closed" | "opening";
   side: "start" | "end";
   onOpen: () => void;
+  busy?: boolean;
 }) {
-  const interactive = phase === "closed";
+  const interactive = phase === "closed" && !busy;
   const spineRight = side === "start";
   const foreSide = spineRight ? "left" : "right";
   // Spine corners round wide (the leather wraps the binding); fore-edge
@@ -49,6 +51,7 @@ export default function ClosedMushafCover({
   return (
     <div
       className={`cover-overlay fixed inset-0 z-[60] flex flex-col items-center justify-center gap-[26px] ${overlayClass}`}
+      aria-busy={busy}
       role={interactive ? "region" : undefined}
       aria-label="المصحف مغلق"
     >
@@ -85,9 +88,10 @@ export default function ClosedMushafCover({
         {/* the cover itself — the whole board is the reopen affordance */}
         <button
           onClick={onOpen}
+          disabled={!interactive}
           aria-label="افتح المصحف"
           tabIndex={interactive ? 0 : -1}
-          className="cover-door absolute inset-0 flex cursor-pointer items-center justify-center overflow-hidden border-0 p-0"
+          className="cover-door absolute inset-0 flex cursor-pointer items-center justify-center overflow-hidden border-0 p-0 disabled:cursor-wait"
           style={{ borderRadius: radius }}
         >
           <span
@@ -121,8 +125,9 @@ export default function ClosedMushafCover({
 
       <button
         onClick={onOpen}
+        disabled={!interactive}
         tabIndex={interactive ? 0 : -1}
-        className="inline-flex cursor-pointer items-center gap-2.5 rounded-full border border-gold-soft/50 bg-gold-soft/10 px-[26px] py-[11px] text-[15px] text-gold-soft transition-colors hover:bg-gold-soft/20"
+        className="inline-flex cursor-pointer items-center gap-2.5 rounded-full border border-gold-soft/50 bg-gold-soft/10 px-[26px] py-[11px] text-[15px] text-gold-soft transition-colors hover:bg-gold-soft/20 disabled:cursor-wait disabled:opacity-65"
       >
         <svg
           viewBox="0 0 24 24"

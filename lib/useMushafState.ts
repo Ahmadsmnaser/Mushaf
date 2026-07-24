@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MOTION, prefersReducedMotion } from "@/lib/motion";
 
 export type MushafSide = "start" | "end";
 
@@ -19,11 +20,8 @@ export type MushafPhase =
 // book settle + 540ms shadow landing over a 240ms canvas fade-in; opening =
 // 320ms book lift, then a 280ms canvas fade delayed 200ms (ends 480ms)
 // while the spread eases back behind it.
-const CLOSING_MS = 580;
-const OPENING_MS = 540;
-
-const prefersReducedMotion = () =>
-  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const CLOSING_MS = MOTION.duration.mushaf + 40;
+const OPENING_MS = MOTION.duration.mushaf + 40;
 
 /**
  * Open/close state machine for the mushaf. Transitional phases are
@@ -53,12 +51,21 @@ export function useMushafState() {
       if (phaseRef.current !== "open") return;
       clearTimer();
       if (prefersReducedMotion()) {
-        setPhase(`closed-from-${side}`);
+        const next = `closed-from-${side}` as const;
+        phaseRef.current = next;
+        setPhase(next);
         return;
       }
-      setPhase(`closing-to-${side}`);
+      const next = `closing-to-${side}` as const;
+      phaseRef.current = next;
+      setPhase(next);
       timer.current = window.setTimeout(
-        () => setPhase(`closed-from-${side}`),
+        () => {
+          const settled = `closed-from-${side}` as const;
+          phaseRef.current = settled;
+          timer.current = null;
+          setPhase(settled);
+        },
         CLOSING_MS
       );
     },
@@ -71,11 +78,18 @@ export function useMushafState() {
     const side: MushafSide = p === "closed-from-start" ? "start" : "end";
     clearTimer();
     if (prefersReducedMotion()) {
+      phaseRef.current = "open";
       setPhase("open");
       return;
     }
-    setPhase(`opening-from-${side}`);
-    timer.current = window.setTimeout(() => setPhase("open"), OPENING_MS);
+    const next = `opening-from-${side}` as const;
+    phaseRef.current = next;
+    setPhase(next);
+    timer.current = window.setTimeout(() => {
+      phaseRef.current = "open";
+      timer.current = null;
+      setPhase("open");
+    }, OPENING_MS);
   }, [clearTimer]);
 
   const side: MushafSide | null =

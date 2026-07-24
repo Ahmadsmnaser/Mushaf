@@ -20,6 +20,7 @@ const GAP = 10;
 const EDGE = 12;
 
 export default function AyahContextMenu({
+  open = true,
   record,
   anchor,
   layoutKey,
@@ -27,6 +28,7 @@ export default function AyahContextMenu({
   onAction,
   onClose,
 }: {
+  open?: boolean;
   record: AyahOverlayRecord;
   anchor: MenuAnchorRect;
   layoutKey: string;
@@ -73,6 +75,7 @@ export default function AyahContextMenu({
   }, [anchor, layoutKey]);
 
   useEffect(() => {
+    if (!open) return;
     menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
     const onPointer = (event: PointerEvent) => {
       if (!menuRef.current?.contains(event.target as Node)) onClose(true);
@@ -101,15 +104,19 @@ export default function AyahContextMenu({
       document.removeEventListener("pointerdown", onPointer);
       document.removeEventListener("keydown", onKey);
     };
-  }, [onClose]);
+  }, [onClose, open]);
 
   return (
     <div
       ref={menuRef}
       role="menu"
+      aria-hidden={!open}
+      inert={!open}
       aria-label={`إجراءات الآية ${record.verseKey}`}
       dir="rtl"
-      className="ayah-context-menu fixed z-[90] grid w-[min(19rem,calc(100vw-24px))] grid-cols-2 gap-1 rounded-xl border border-gold/30 bg-sheet/95 p-2 text-ink shadow-2xl backdrop-blur-md"
+      className={`ayah-context-menu fixed z-[90] grid w-[min(19rem,calc(100vw-24px))] grid-cols-2 gap-1 rounded-xl border border-gold/30 bg-sheet/95 p-2 text-ink shadow-2xl backdrop-blur-md ${
+        open ? "ayah-context-menu-visible" : ""
+      }`}
       style={{ left: position.left, top: position.top }}
     >
       <div className="col-span-2 border-b border-gold/15 px-2 py-1 text-center text-xs text-ink-soft">

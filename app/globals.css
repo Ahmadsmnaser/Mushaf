@@ -22,10 +22,15 @@
    * (they are physical gestures, not UI transitions) — everything else
    * draws from here.
    */
-  --motion-fast: 180ms; /* hovers, presses, tooltips */
-  --motion-normal: 300ms; /* fades, modals, toolbar, backdrops */
-  --motion-slow: 450ms; /* drawers, entrances */
-  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1); /* things arriving */
+  --motion-popover: 180ms;
+  --motion-dialog: 240ms;
+  --motion-panel: 280ms;
+  --motion-page: 340ms;
+  --motion-mushaf: 900ms;
+  --motion-fast: var(--motion-popover);
+  --motion-normal: var(--motion-dialog);
+  --motion-slow: var(--motion-panel);
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1); /* things arriving */
   --ease-in-soft: cubic-bezier(0.4, 0, 1, 1); /* things leaving */
   --ease-in-out-soft: cubic-bezier(0.65, 0, 0.35, 1); /* state blends */
 }
@@ -281,12 +286,15 @@ body {
  */
 .modal-shell {
   visibility: hidden;
-  transition: visibility 0s linear var(--motion-normal);
+  pointer-events: none;
+}
+
+.modal-shell.modal-present {
+  visibility: visible;
 }
 
 .modal-shell.modal-open {
-  visibility: visible;
-  transition-delay: 0s;
+  pointer-events: auto;
 }
 
 .modal-backdrop {
@@ -300,29 +308,33 @@ body {
 
 .modal-card {
   opacity: 0;
-  transform: translateY(18px);
+  transform: translateY(8px) scale(0.985);
   transition:
-    opacity var(--motion-normal) var(--ease-out-soft),
-    transform var(--motion-normal) var(--ease-out-soft);
+    opacity var(--motion-dialog) var(--ease-in-soft),
+    transform var(--motion-dialog) var(--ease-in-soft);
 }
 
 .modal-open .modal-card {
   opacity: 1;
   transform: none;
+  transition-timing-function: var(--ease-out-soft);
 }
 
 .drawer-backdrop {
   opacity: 0;
   visibility: hidden;
+  pointer-events: none;
   transition:
-    opacity var(--motion-normal) var(--ease-in-out-soft),
-    visibility 0s linear var(--motion-normal);
+    opacity var(--motion-panel) var(--ease-in-out-soft);
+}
+
+.drawer-backdrop-present {
+  visibility: visible;
 }
 
 .drawer-backdrop-open {
   opacity: 1;
-  visibility: visible;
-  transition-delay: 0s;
+  pointer-events: auto;
 }
 
 .drawer-backdrop-closed {
@@ -333,34 +345,36 @@ body {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transform: translate3d(0, 0, 0) scale(0.985);
+  transform: translate3d(0, 0, 0);
   transition:
-    opacity var(--motion-normal) var(--ease-out-soft),
-    transform var(--motion-normal) var(--ease-out-soft),
-    visibility 0s linear var(--motion-normal);
+    opacity var(--motion-panel) var(--ease-in-soft),
+    transform var(--motion-panel) var(--ease-in-soft);
   will-change: opacity, transform;
+}
+
+.reader-drawer-present {
+  visibility: visible;
 }
 
 .reader-drawer-open {
   opacity: 1;
-  visibility: visible;
   pointer-events: auto;
-  transform: translate3d(0, 0, 0) scale(1);
-  transition-delay: 0s;
+  transform: translate3d(0, 0, 0);
+  transition-timing-function: var(--ease-out-soft);
 }
 
 .reader-drawer-closed-left {
-  transform: translate3d(-104%, 0, 0) scale(0.985);
+  transform: translate3d(-20px, 0, 0);
 }
 
 .reader-drawer-closed-right {
-  transform: translate3d(104%, 0, 0) scale(0.985);
+  transform: translate3d(20px, 0, 0);
 }
 
 @media (max-width: 639.98px) {
   .reader-drawer-closed-left,
   .reader-drawer-closed-right {
-    transform: translate3d(0, 104%, 0) scale(0.985);
+    transform: translate3d(0, 20px, 0);
   }
 }
 
@@ -382,6 +396,83 @@ body {
   pointer-events: auto;
   transform: translate3d(0, -50%, 0) scale(1);
   transition-delay: 0s;
+}
+
+/*
+ * Programmatic/direct page changes use two atomic spread layers. The current
+ * spread remains fully visible while the incoming pair decodes; these classes
+ * are only applied after readiness, so a paper-colored loading surface can
+ * never replace the settled Quran pages.
+ */
+.spread-layer-current,
+.spread-layer-incoming {
+  transition:
+    opacity var(--motion-page) var(--ease-out-soft),
+    transform var(--motion-page) var(--ease-out-soft);
+}
+
+.spread-layer-incoming {
+  z-index: 35;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.spread-layer-incoming.spread-direction-next {
+  transform: translate3d(-12px, 0, 0) scale(0.995);
+}
+
+.spread-layer-incoming.spread-direction-prev {
+  transform: translate3d(12px, 0, 0) scale(0.995);
+}
+
+.spread-layer-incoming-visible {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1) !important;
+  will-change: opacity, transform;
+}
+
+.spread-layer-current-out {
+  opacity: 0;
+  will-change: opacity, transform;
+}
+
+.spread-layer-current-out.spread-direction-next {
+  transform: translate3d(12px, 0, 0) scale(0.995);
+}
+
+.spread-layer-current-out.spread-direction-prev {
+  transform: translate3d(-12px, 0, 0) scale(0.995);
+}
+
+.ayah-context-menu {
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+  transition:
+    opacity var(--motion-popover) var(--ease-in-soft),
+    transform var(--motion-popover) var(--ease-in-soft);
+}
+
+.ayah-context-menu-visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+  transition-timing-function: var(--ease-out-soft);
+}
+
+.reader-toast {
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  pointer-events: none;
+  transition:
+    opacity var(--motion-popover) var(--ease-in-soft),
+    transform var(--motion-popover) var(--ease-in-soft);
+}
+
+.reader-toast-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  transition-timing-function: var(--ease-out-soft);
 }
 
 /*
@@ -1232,11 +1323,11 @@ body {
 }
 
 .cover-overlay-enter {
-  animation: cover-fade-in 240ms ease both;
+  animation: cover-fade-in 320ms ease both;
 }
 
 .cover-overlay-leave {
-  animation: cover-fade-out 280ms ease 200ms both;
+  animation: cover-fade-out 540ms ease 360ms both;
 }
 
 /* The book settling shut: a hint of rotation from the spine (—hinge-deg is
@@ -1268,11 +1359,11 @@ body {
 }
 
 .book-settle-in {
-  animation: mushaf-settle 480ms cubic-bezier(0.2, 0.6, 0.2, 1) both;
+  animation: mushaf-settle var(--motion-mushaf) var(--ease-out-soft) both;
 }
 
 .book-lift-out {
-  animation: mushaf-lift 320ms cubic-bezier(0.4, 0.1, 0.6, 1) both;
+  animation: mushaf-lift 720ms var(--ease-in-soft) both;
 }
 
 /* The contact shadow lands a beat after the book (the "thump"), and lets go
@@ -1306,11 +1397,11 @@ body {
 }
 
 .book-settle-in .cover-desk-shadow {
-  animation: shadow-settle 540ms ease both;
+  animation: shadow-settle var(--motion-mushaf) ease both;
 }
 
 .book-lift-out .cover-desk-shadow {
-  animation: shadow-lift 240ms ease both;
+  animation: shadow-lift 520ms ease both;
 }
 
 /* The open spread reacting to the cover: recede while closing, ease back
@@ -1330,11 +1421,11 @@ body {
 }
 
 .spread-recede {
-  animation: spread-recede 260ms ease both;
+  animation: spread-recede 600ms var(--ease-in-out-soft) both;
 }
 
 .spread-return {
-  animation: spread-return 480ms cubic-bezier(0.2, 0.6, 0.2, 1) both;
+  animation: spread-return var(--motion-mushaf) var(--ease-out-soft) both;
 }
 
 /* The cover: tooled leather with the title, one soft grounded shadow (the
@@ -1445,6 +1536,18 @@ body {
   .reader-drawer-open,
   .reader-drawer-closed-left,
   .reader-drawer-closed-right {
+    transform: none;
+  }
+  .spread-layer-current,
+  .spread-layer-incoming {
+    transition: opacity 120ms ease;
+    transform: none !important;
+  }
+  .ayah-context-menu,
+  .reader-toast {
+    transition: opacity 120ms ease;
+  }
+  .ayah-context-menu {
     transform: none;
   }
   /* Dialogs: no slide, a bare 120ms fade; visibility flips with it. */

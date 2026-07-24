@@ -351,7 +351,7 @@ export default function MarksPanel({
                       }}
                       aria-label="حذف العلامة"
                       disabled={saving}
-                      className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full text-ink-soft opacity-0 transition-all hover:bg-ink/5 hover:text-ink focus-visible:opacity-100 disabled:cursor-default disabled:opacity-30 group-hover:opacity-100"
+                      className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full text-ink-soft opacity-0 transition-[opacity,color,background-color] hover:bg-ink/5 hover:text-ink focus-visible:opacity-100 disabled:cursor-default disabled:opacity-30 group-hover:opacity-100"
                     >
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" className="h-4 w-4">
                         <path d="M6 6l12 12M18 6L6 18" />

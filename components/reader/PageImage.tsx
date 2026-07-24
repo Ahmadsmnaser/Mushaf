@@ -4,6 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { getPageImageUrl, PAGE_HEIGHT, PAGE_WIDTH } from "@/lib/mushaf/source";
 import type { AyahOverlayRecord, VerseKey } from "@/lib/mushaf/ayahRegions";
 import AyahOverlay, { type MenuAnchorRect } from "./AyahOverlay";
+import {
+  forgetPageImage,
+  isPageImageReady,
+  markPageImageReady,
+} from "@/lib/mushaf/pageImageLoader";
 
 const arNum = (n: number) => n.toLocaleString("ar-EG");
 
@@ -50,15 +55,19 @@ export default function PageImage({
   ) => void;
   onAyahRecords?: (page: number, records: AyahOverlayRecord[]) => void;
 }) {
-  const [status, setStatus] = useState<Status>("loading");
+  const [status, setStatus] = useState<Status>(() =>
+    isPageImageReady(page) ? "ready" : "loading"
+  );
   const [attempt, setAttempt] = useState(0);
   const imgRef = useRef<HTMLImageElement>(null);
 
   // onLoad can be missed for already-cached images; check `complete` too.
   useEffect(() => {
     const el = imgRef.current;
-    if (el && el.complete && el.naturalWidth > 0) setStatus("ready");
-    else setStatus("loading");
+    if (isPageImageReady(page) || (el && el.complete && el.naturalWidth > 0)) {
+      markPageImageReady(page);
+      setStatus("ready");
+    } else setStatus("loading");
   }, [page, attempt]);
 
   if (status === "error") {
@@ -94,8 +103,14 @@ export default function PageImage({
         width={PAGE_WIDTH}
         height={PAGE_HEIGHT}
         draggable={false}
-        onLoad={() => setStatus("ready")}
-        onError={() => setStatus("error")}
+        onLoad={() => {
+          markPageImageReady(page);
+          setStatus("ready");
+        }}
+        onError={() => {
+          forgetPageImage(page);
+          setStatus("error");
+        }}
         style={{ filter: "var(--mushaf-image-filter)" }}
         className={`h-full w-full object-contain transition-opacity duration-200 ${
           status === "ready" ? "opacity-100" : "opacity-0"

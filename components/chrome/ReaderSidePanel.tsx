@@ -1,8 +1,12 @@
 "use client";
 
+import { useRef } from "react";
 import ThemeSwitcher from "./ThemeSwitcher";
 import type { ReaderTheme } from "@/lib/readerSettings";
 import AccountButton from "@/components/auth/AccountButton";
+import { usePresence } from "@/components/motion/Presence";
+import { useOverlayFocus } from "@/components/motion/useOverlayFocus";
+import { MOTION } from "@/lib/motion";
 
 const arNum = (n: number) => n.toLocaleString("ar-EG");
 
@@ -62,28 +66,39 @@ export default function ReaderSidePanel({
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
 }) {
+  const panelRef = useRef<HTMLElement>(null);
+  const presence = usePresence(open, MOTION.duration.panel);
+  useOverlayFocus(open, presence.mounted, panelRef, onClose);
+
+  if (!presence.mounted) return null;
+  const interactive = open && presence.phase !== "exiting";
+
   return (
     <>
       {/* backdrop (click to close) */}
       <div
-        className={`drawer-backdrop fixed inset-0 z-[44] bg-ink/15 backdrop-blur-[1px] ${
-          open ? "drawer-backdrop-open" : "drawer-backdrop-closed"
+        className={`drawer-backdrop drawer-backdrop-present fixed inset-0 z-[44] bg-ink/15 backdrop-blur-[1px] ${
+          presence.phase === "visible" ? "drawer-backdrop-open" : "drawer-backdrop-closed"
         }`}
         onClick={onClose}
         aria-hidden
+        data-presence={presence.phase}
       />
 
       <aside
+        ref={panelRef}
+        tabIndex={-1}
         aria-label="لوحة القراءة"
-        aria-hidden={!open}
-        inert={!open}
+        aria-hidden={!interactive}
+        inert={!interactive}
         // Overlays the reader (never squeezes the book). Desktop: 280px side
         // drawer on a translucent parchment surface; mobile: bottom sheet.
-        className={`reader-drawer reader-drawer-left fixed z-[45] flex flex-col gap-[22px] overflow-y-auto bg-paper/85 px-5 py-[22px] backdrop-blur-2xl backdrop-saturate-105 max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[75svh] max-sm:rounded-t-2xl max-sm:border-t max-sm:border-gold/25 sm:inset-y-0 sm:left-0 sm:w-[280px] sm:max-w-[82vw] sm:border-e sm:border-gold/20 sm:shadow-[24px_0_60px_-30px_rgba(40,30,14,.5)] ${
-          open
+        className={`reader-drawer reader-drawer-present reader-drawer-left fixed z-[45] flex flex-col gap-[22px] overflow-y-auto bg-paper/85 px-5 py-[22px] backdrop-blur-2xl backdrop-saturate-105 max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[75svh] max-sm:rounded-t-2xl max-sm:border-t max-sm:border-gold/25 sm:inset-y-0 sm:left-0 sm:w-[280px] sm:max-w-[82vw] sm:border-e sm:border-gold/20 sm:shadow-[24px_0_60px_-30px_rgba(40,30,14,.5)] ${
+          presence.phase === "visible"
             ? "reader-drawer-open"
             : "reader-drawer-closed-left"
         }`}
+        data-presence={presence.phase}
       >
         <div className="flex items-center justify-between">
           <h2 className="font-display text-[22px] text-accent">لوحة القراءة</h2>

@@ -32,6 +32,9 @@ import { userApi } from "@/lib/user/client";
 import { isVerseKey, type AyahOverlayRecord, type VerseKey } from "@/lib/mushaf/ayahRegions";
 import AyahContextMenu, { type AyahMenuAction } from "./AyahContextMenu";
 import type { MenuAnchorRect } from "./AyahOverlay";
+import { loadSpreadImages } from "@/lib/mushaf/pageImageLoader";
+import { MOTION, prefersReducedMotion } from "@/lib/motion";
+import { usePresence } from "@/components/motion/Presence";
 
 const FLIP_MS = 560;
 const ZOOM_STEPS = [1, 1.25, 1.5, 2] as const;
@@ -58,10 +61,6 @@ const NAVIGATION: Record<
   leftButton: "next",
   rightButton: "previous",
 };
-
-/** Checked at interaction time: reduced motion crossfades instead of flipping. */
-const prefersReducedMotion = () =>
-  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /**
  * RTL navigation: this is an Arabic book, so positive deltaX (rightward
@@ -104,6 +103,14 @@ interface Flip {
   grab: GrabZone;
 }
 
+interface SpreadSwap {
+  requestId: number;
+  target: number;
+  verseKey: VerseKey | null;
+  direction: FlipDir;
+  phase: "entering" | "visible" | "committing";
+}
+
 export default function Reader({
   initialPage,
   initialAyahKey = null,
@@ -113,6 +120,7 @@ export default function Reader({
 }) {
   const [page, setPage] = useState(() => clampPage(initialPage));
   const [flip, setFlip] = useState<Flip | null>(null);
+  const [spreadSwap, setSpreadSwap] = useState<SpreadSwap | null>(null);
   // Visual book state (open / closing / closed / opening), fully separate
   // from page navigation state — closing never changes the page number.
   const mushaf = useMushafState();
@@ -125,6 +133,7 @@ export default function Reader({
   const [marksOpen, setMarksOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [tafsirOpen, setTafsirOpen] = useState(false);
+  const [openingPending, setOpeningPending] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hoveredVerseKey, setHoveredVerseKey] = useState<VerseKey | null>(null);
   const [focusedVerseKey, setFocusedVerseKey] = useState<VerseKey | null>(null);
@@ -133,10 +142,19 @@ export default function Reader({
     record: AyahOverlayRecord;
     anchor: MenuAnchorRect;
   } | null>(null);
+  const [ayahMenuVisual, setAyahMenuVisual] = useState<{
+    record: AyahOverlayRecord;
+    anchor: MenuAnchorRect;
+  } | null>(null);
   const [visibleAyahs, setVisibleAyahs] = useState<Record<number, AyahOverlayRecord[]>>({});
   const [tafsirVerseKey, setTafsirVerseKey] = useState<VerseKey | null>(null);
   const [marksTarget, setMarksTarget] = useState<AyahOverlayRecord | null>(null);
   const [ayahStatus, setAyahStatus] = useState("");
+  const [ayahStatusVisual, setAyahStatusVisual] = useState("");
+  const showAyahStatus = useCallback((message: string) => {
+    setAyahStatus(message);
+    setAyahStatusVisual(message);
+  }, []);
 
   // Recitation player, shared by the tafsir panel and the floating mini-bar.
   // It deliberately survives closing the tafsir drawer; shutting the book's
@@ -177,7 +195,10 @@ export default function Reader({
   const bookRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ x0: number; lastX: number; t0: number; w: number } | null>(null);
   const wheelUnlockRef = useRef<number | null>(null);
-  const fadeRef = useRef(false); // reduced-motion crossfade in flight
+  const navigationBusyRef = useRef(false);
+  const navigationRequestRef = useRef(0);
+  const navigationAbortRef = useRef<AbortController | null>(null);
+  const openingPendingRef = useRef(false);
   const pageRef = useRef(page);
   const flipRef = useRef(flip);
   const mushafOpenRef = useRef(true);
@@ -187,6 +208,14 @@ export default function Reader({
   const panelOpenRef = useRef(false);
   const tafsirOpenRef = useRef(false);
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const ayahMenuPresence = usePresence(
+    Boolean(ayahMenu && mushaf.isOpen && !flip),
+    MOTION.duration.popover
+  );
+  const ayahStatusPresence = usePresence(
+    Boolean(ayahStatus),
+    MOTION.duration.popover
+  );
 
   const clearAyahInteraction = useCallback((restoreFocus = false) => {
     const trigger = menuTriggerRef.current;
@@ -228,7 +257,9 @@ export default function Reader({
     ) => {
       setSelectedVerseKey(record.verseKey);
       setPage(record.pageNumber);
-      setAyahMenu({ record, anchor });
+      const nextMenu = { record, anchor };
+      setAyahMenu(nextMenu);
+      setAyahMenuVisual(nextMenu);
       menuTriggerRef.current = trigger;
     },
     []
@@ -263,6 +294,15 @@ export default function Reader({
     tafsirOpenRef.current = tafsirOpen;
   }, [tafsirOpen]);
 
+  useEffect(
+    () => () => {
+      navigationRequestRef.current += 1;
+      navigationAbortRef.current?.abort();
+      navigationAbortRef.current = null;
+    },
+    []
+  );
+
   useEffect(() => {
     const onVisibility = () => {
       if (document.hidden) clearAyahInteraction(false);
@@ -292,8 +332,10 @@ export default function Reader({
     if (f.phase === "animating" && f.progress === 1) {
       setPage(f.to);
       setFlip(null);
+      navigationBusyRef.current = false;
     } else if (f.phase === "cancelling") {
       setFlip(null);
+      navigationBusyRef.current = false;
     }
   }, []);
 
@@ -315,6 +357,11 @@ export default function Reader({
   // ------------------------------------------------------------------
   const closeBook = useCallback(
     (side: "start" | "end") => {
+      navigationRequestRef.current += 1;
+      navigationAbortRef.current?.abort();
+      navigationAbortRef.current = null;
+      navigationBusyRef.current = false;
+      setSpreadSwap(null);
       setPanelOpen(false);
       setTafsirOpen(false);
       setJumpOpen(false);
@@ -325,27 +372,43 @@ export default function Reader({
     [clearAyahInteraction, mushaf]
   );
 
-  /** Reduced-motion page turn: a calm crossfade instead of the 3D leaf. */
-  const crossFade = useCallback((to: number) => {
-    const book = bookRef.current;
-    if (!book) {
-      setPage(to);
-      return;
-    }
-    fadeRef.current = true;
-    book.style.transition = "opacity 190ms ease";
-    book.style.opacity = "0";
-    window.setTimeout(() => {
-      setPage(to);
-      requestAnimationFrame(() => {
-        book.style.opacity = "1";
-      });
-      window.setTimeout(() => {
-        book.style.transition = "";
-        fadeRef.current = false;
-      }, 220);
-    }, 200);
-  }, []);
+  const openBook = useCallback(() => {
+    if (!mushafClosedRef.current || openingPendingRef.current) return;
+    const requestId = ++navigationRequestRef.current;
+    const controller = new AbortController();
+    navigationAbortRef.current?.abort();
+    navigationAbortRef.current = controller;
+    openingPendingRef.current = true;
+    setOpeningPending(true);
+
+    void loadSpreadImages(pageRef.current, singleRef.current, controller.signal).then(
+      () => {
+        if (
+          requestId !== navigationRequestRef.current ||
+          controller.signal.aborted ||
+          !mushafClosedRef.current
+        )
+          return;
+        navigationAbortRef.current = null;
+        openingPendingRef.current = false;
+        setOpeningPending(false);
+        mushaf.open();
+      },
+      (error: unknown) => {
+        if (requestId !== navigationRequestRef.current) return;
+        navigationAbortRef.current = null;
+        openingPendingRef.current = false;
+        setOpeningPending(false);
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          console.error("Unable to prepare the Mushaf opening spread", {
+            page: pageRef.current,
+            error,
+          });
+          showAyahStatus("تعذّر تجهيز الصفحة لفتح المصحف. حاول مرة أخرى.");
+        }
+      }
+    );
+  }, [mushaf, showAyahStatus]);
 
   const beginFlip = useCallback(
     (dir: FlipDir, phase: Flip["phase"], auto: boolean, grab: GrabZone) => {
@@ -355,29 +418,73 @@ export default function Reader({
         return false;
       }
       clearAyahInteraction(false);
-      if (auto && prefersReducedMotion()) {
-        crossFade(t.to);
-        return true;
-      }
       setFlip({ dir, from: t.pos, to: t.to, phase, progress: 0, auto, grab });
       return true;
     },
-    [flipTarget, closeBook, crossFade, clearAyahInteraction]
+    [flipTarget, closeBook, clearAyahInteraction]
   );
 
   const navigateByIntent = useCallback(
     (intent: NavIntent) => {
       if (
         flipRef.current ||
-        fadeRef.current ||
+        navigationBusyRef.current ||
         modalOpenRef.current ||
         !mushafOpenRef.current
       )
         return;
       const dir: FlipDir = intent === "next" ? "next" : "prev";
-      beginFlip(dir, "animating", true, "middle");
+      const target = flipTarget(dir);
+      if (!target) {
+        closeBook(dir === "prev" ? "start" : "end");
+        return;
+      }
+
+      const requestId = ++navigationRequestRef.current;
+      const controller = new AbortController();
+      navigationAbortRef.current?.abort();
+      navigationAbortRef.current = controller;
+      navigationBusyRef.current = true;
+      clearAyahInteraction(false);
+
+      void loadSpreadImages(target.to, singleRef.current, controller.signal).then(
+        () => {
+          if (
+            requestId !== navigationRequestRef.current ||
+            controller.signal.aborted ||
+            !mushafOpenRef.current
+          )
+            return;
+          navigationAbortRef.current = null;
+          if (prefersReducedMotion()) {
+            setSpreadSwap({
+              requestId,
+              target: target.to,
+              verseKey: null,
+              direction: dir,
+              phase: "entering",
+            });
+            return;
+          }
+          if (!beginFlip(dir, "animating", true, "middle")) {
+            navigationBusyRef.current = false;
+          }
+        },
+        (error: unknown) => {
+          if (requestId !== navigationRequestRef.current) return;
+          navigationAbortRef.current = null;
+          navigationBusyRef.current = false;
+          if (!(error instanceof DOMException && error.name === "AbortError")) {
+            console.error("Mushaf spread navigation failed", {
+              target: target.to,
+              error,
+            });
+            showAyahStatus("تعذّر تحميل الصفحة. بقيت الصفحة الحالية ظاهرة.");
+          }
+        }
+      );
     },
-    [beginFlip]
+    [beginFlip, clearAyahInteraction, closeBook, flipTarget, showAyahStatus]
   );
 
   const navigateNext = useCallback(() => navigateByIntent("next"), [navigateByIntent]);
@@ -404,16 +511,107 @@ export default function Reader({
     };
   }, [flip]);
 
-  /** Direct jump (modals, panel): no flip animation, straight to the page. */
-  const jumpTo = useCallback((p: number, verseKey: VerseKey | null = null) => {
-    setFlip(null);
-    setHoveredVerseKey(null);
-    setFocusedVerseKey(null);
-    setAyahMenu(null);
-    setSelectedVerseKey(verseKey);
-    menuTriggerRef.current = null;
-    setPage(clampPage(p));
-  }, []);
+  /**
+   * Direct jumps keep the settled spread visible while both destination
+   * images load and decode. Only then is an incoming layer mounted.
+   */
+  const jumpTo = useCallback(
+    (p: number, verseKey: VerseKey | null = null) => {
+      const target = clampPage(p);
+      const sameVisualSpread = singleRef.current
+        ? target === pageRef.current
+        : pageToSpreadStart(target) === pageToSpreadStart(pageRef.current);
+      if (sameVisualSpread) {
+        setPage(target);
+        setSelectedVerseKey(verseKey);
+        setAyahMenu(null);
+        return;
+      }
+
+      const requestId = ++navigationRequestRef.current;
+      const controller = new AbortController();
+      navigationAbortRef.current?.abort();
+      navigationAbortRef.current = controller;
+      navigationBusyRef.current = true;
+      setFlip(null);
+      clearAyahInteraction(false);
+
+      void loadSpreadImages(target, singleRef.current, controller.signal).then(
+        () => {
+          if (
+            requestId !== navigationRequestRef.current ||
+            controller.signal.aborted ||
+            !mushafOpenRef.current
+          )
+            return;
+          navigationAbortRef.current = null;
+          setSpreadSwap({
+            requestId,
+            target,
+            verseKey,
+            direction: target > pageRef.current ? "next" : "prev",
+            phase: "entering",
+          });
+        },
+        (error: unknown) => {
+          if (requestId !== navigationRequestRef.current) return;
+          navigationAbortRef.current = null;
+          navigationBusyRef.current = false;
+          if (!(error instanceof DOMException && error.name === "AbortError")) {
+            console.error("Direct Mushaf page navigation failed", { target, error });
+            showAyahStatus("تعذّر تحميل الصفحة. بقيت الصفحة الحالية ظاهرة.");
+          }
+        }
+      );
+    },
+    [clearAyahInteraction, showAyahStatus]
+  );
+
+  useEffect(() => {
+    if (!spreadSwap || spreadSwap.phase !== "entering") return;
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        setSpreadSwap((current) =>
+          current?.requestId === spreadSwap.requestId
+            ? { ...current, phase: "visible" }
+            : current
+        );
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+    };
+  }, [spreadSwap]);
+
+  useEffect(() => {
+    if (!spreadSwap || spreadSwap.phase !== "visible") return;
+    const duration = prefersReducedMotion() ? 120 : MOTION.duration.page;
+    const timer = window.setTimeout(() => {
+      if (spreadSwap.requestId !== navigationRequestRef.current) return;
+      setPage(spreadSwap.target);
+      setSelectedVerseKey(spreadSwap.verseKey);
+      setSpreadSwap({ ...spreadSwap, phase: "committing" });
+    }, duration);
+    return () => window.clearTimeout(timer);
+  }, [spreadSwap]);
+
+  useEffect(() => {
+    if (!spreadSwap || spreadSwap.phase !== "committing") return;
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        if (spreadSwap.requestId !== navigationRequestRef.current) return;
+        setSpreadSwap(null);
+        navigationBusyRef.current = false;
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+    };
+  }, [spreadSwap]);
 
   /**
    * Search result → exact Mushaf page. Closes the overlay, then jumps directly
@@ -445,7 +643,7 @@ export default function Reader({
       if (
         !e.isPrimary ||
         flipRef.current ||
-        fadeRef.current ||
+        navigationBusyRef.current ||
         modalOpenRef.current ||
         !mushafOpenRef.current
       )
@@ -532,15 +730,15 @@ export default function Reader({
       const m = window.location.pathname.match(/\/page\/(\d+)/);
       if (m) {
         const candidate = new URL(window.location.href).searchParams.get("ayah");
-        setFlip(null);
-        setPage(clampPage(Number(m[1])));
-        setSelectedVerseKey(candidate && isVerseKey(candidate) ? candidate : null);
-        setAyahMenu(null);
+        jumpTo(
+          clampPage(Number(m[1])),
+          candidate && isVerseKey(candidate) ? candidate : null
+        );
       }
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  }, [jumpTo]);
 
   useEffect(() => {
     const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -573,7 +771,7 @@ export default function Reader({
           !isTypingTarget(e.target)
         ) {
           e.preventDefault();
-          mushaf.open();
+          openBook();
         }
         return;
       }
@@ -609,14 +807,14 @@ export default function Reader({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [navigateByIntent, toggleBookmark, mushaf.open]); // eslint-disable-line react-hooks/exhaustive-deps -- stable callback off the hook
+  }, [navigateByIntent, openBook, toggleBookmark]);
 
   useEffect(() => {
     const onWheel = (e: WheelEvent) => {
       if (
         zoom > 1.001 ||
         flipRef.current ||
-        fadeRef.current ||
+        navigationBusyRef.current ||
         modalOpenRef.current ||
         panelOpenRef.current ||
         tafsirOpenRef.current || // wheel scrolls the tafsir text, not the book
@@ -698,11 +896,11 @@ export default function Reader({
           setTafsirOpen(true);
         } else if (action === "copy") {
           await copyToClipboard(copyText);
-          setAyahStatus("تم نسخ الآية.");
+          showAyahStatus("تم نسخ الآية.");
         } else if (action === "bookmark") {
           const changed = toggleVerseBookmark(record);
           if (changed) {
-            setAyahStatus(
+            showAyahStatus(
               isVerseBookmarked(record.verseKey) ? "تمت إزالة العلامة." : "تم حفظ العلامة."
             );
           }
@@ -713,15 +911,15 @@ export default function Reader({
           const url = `${window.location.origin}/page/${record.pageNumber}?ayah=${encodeURIComponent(record.verseKey)}`;
           if (navigator.share) {
             await navigator.share({ title: reference, text: record.text.trim(), url });
-            setAyahStatus("تمت مشاركة رابط الآية.");
+            showAyahStatus("تمت مشاركة رابط الآية.");
           } else {
             await copyToClipboard(url);
-            setAyahStatus("تم نسخ رابط الآية.");
+            showAyahStatus("تم نسخ رابط الآية.");
           }
         }
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
-          setAyahStatus("تعذر تنفيذ الإجراء. حاول مرة أخرى.");
+          showAyahStatus("تعذر تنفيذ الإجراء. حاول مرة أخرى.");
         }
       } finally {
         closeAyahMenu(true, false);
@@ -733,6 +931,7 @@ export default function Reader({
       closeAyahMenu,
       isVerseBookmarked,
       page,
+      showAyahStatus,
       single,
       toggleVerseBookmark,
       visibleAyahs,
@@ -833,6 +1032,15 @@ export default function Reader({
   const bookWidth = single
     ? `calc(min(94vw, 86svh * 0.6783) * ${zoom})`
     : `calc(min(92vw, 88svh * 1.3566) * ${zoom})`;
+  const incomingSpreadStart = spreadSwap
+    ? pageToSpreadStart(spreadSwap.target)
+    : null;
+  const swapIsVisible =
+    spreadSwap?.phase === "visible" || spreadSwap?.phase === "committing";
+  const currentSpreadClass =
+    spreadSwap?.phase === "visible"
+      ? `spread-layer-current-out spread-direction-${spreadSwap.direction}`
+      : "";
 
   const onLeafTransitionEnd = (e: React.TransitionEvent) => {
     if (e.target === e.currentTarget && e.propertyName === "transform") resolveFlip();
@@ -892,7 +1100,10 @@ export default function Reader({
           >
             {single ? (
               <BookFrame aspectRatio="622 / 917">
-                <div ref={bookRef} className="absolute inset-0">
+                <div
+                  ref={bookRef}
+                  className={`spread-layer-current absolute inset-0 ${currentSpreadClass}`}
+                >
                   {singleUnder !== null && (
                     <div className="absolute inset-0">
                       <PageImage page={singleUnder} />
@@ -921,10 +1132,26 @@ export default function Reader({
                   <DragStrip side="left" onDown={startDrag("next")} onMove={moveDrag} onUp={endDrag} />
                   <DragStrip side="right" onDown={startDrag("prev")} onMove={moveDrag} onUp={endDrag} />
                 </div>
+                {spreadSwap && (
+                  <div
+                    aria-hidden
+                    className={`spread-layer-incoming spread-direction-${spreadSwap.direction} absolute inset-0 ${
+                      swapIsVisible ? "spread-layer-incoming-visible" : ""
+                    }`}
+                  >
+                    <PageImage page={spreadSwap.target} />
+                    {isPageBookmarked(spreadSwap.target) && (
+                      <Ribbon style={{ right: "9%" }} />
+                    )}
+                  </div>
+                )}
               </BookFrame>
             ) : (
               <BookFrame aspectRatio="1244 / 917">
-                <div ref={bookRef} className="absolute inset-0">
+                <div
+                  ref={bookRef}
+                  className={`spread-layer-current absolute inset-0 ${currentSpreadClass}`}
+                >
                   <div className="absolute inset-y-0 right-0 w-1/2">
                     <PageImage
                       page={baseRight}
@@ -973,6 +1200,28 @@ export default function Reader({
                   <DragStrip side="left" onDown={startDrag("next")} onMove={moveDrag} onUp={endDrag} />
                   <DragStrip side="right" onDown={startDrag("prev")} onMove={moveDrag} onUp={endDrag} />
                 </div>
+                {spreadSwap && incomingSpreadStart !== null && (
+                  <div
+                    aria-hidden
+                    className={`spread-layer-incoming spread-direction-${spreadSwap.direction} absolute inset-0 ${
+                      swapIsVisible ? "spread-layer-incoming-visible" : ""
+                    }`}
+                  >
+                    <div className="absolute inset-y-0 right-0 w-1/2">
+                      <PageImage page={incomingSpreadStart} />
+                    </div>
+                    <div className="absolute inset-y-0 left-0 w-1/2">
+                      <PageImage page={incomingSpreadStart + 1} />
+                    </div>
+                    <SpreadShading />
+                    {isPageBookmarked(incomingSpreadStart) && (
+                      <Ribbon style={{ right: "9%" }} />
+                    )}
+                    {isPageBookmarked(incomingSpreadStart + 1) && (
+                      <Ribbon style={{ left: "9%" }} />
+                    )}
+                  </div>
+                )}
               </BookFrame>
             )}
           </div>
@@ -988,7 +1237,8 @@ export default function Reader({
         <ClosedMushafCover
           phase={mushaf.cover}
           side={mushaf.side}
-          onOpen={mushaf.open}
+          onOpen={openBook}
+          busy={openingPending}
         />
       )}
 
@@ -1112,23 +1362,28 @@ export default function Reader({
       <LocalMarksMigrationPrompt />
         </>
       )}
-      {ayahMenu && mushaf.isOpen && !flip && (
+      {ayahMenuPresence.mounted && ayahMenuVisual && (
         <AyahContextMenu
-          record={ayahMenu.record}
-          anchor={ayahMenu.anchor}
+          open={ayahMenuPresence.visible}
+          record={ayahMenuVisual.record}
+          anchor={ayahMenuVisual.anchor}
           layoutKey={`${zoom}-${isFullscreen}`}
-          bookmarked={isVerseBookmarked(ayahMenu.record.verseKey)}
+          bookmarked={isVerseBookmarked(ayahMenuVisual.record.verseKey)}
           onAction={(action) => void runAyahAction(action)}
           onClose={handleAyahMenuClose}
         />
       )}
-      {ayahStatus && (
+      {ayahStatusPresence.mounted && ayahStatusVisual && (
         <div
           role="status"
           aria-live="polite"
-          className="fixed bottom-20 left-1/2 z-[95] -translate-x-1/2 rounded-full border border-gold/25 bg-sheet/95 px-4 py-2 text-sm text-ink shadow-lg backdrop-blur"
+          aria-hidden={!ayahStatusPresence.visible}
+          inert={!ayahStatusPresence.visible}
+          className={`reader-toast fixed bottom-20 left-1/2 z-[95] rounded-full border border-gold/25 bg-sheet/95 px-4 py-2 text-sm text-ink shadow-lg backdrop-blur ${
+            ayahStatusPresence.phase === "visible" ? "reader-toast-visible" : ""
+          }`}
         >
-          {ayahStatus}
+          {ayahStatusVisual}
         </div>
       )}
     </main>
@@ -1245,7 +1500,7 @@ function NavZone({
     >
       <span
         aria-hidden
-        className={`reader-nav-affordance absolute top-1/2 flex h-14 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-gold/20 bg-sheet/20 text-[color:var(--canvas-fg)] shadow-[0_10px_30px_-18px_rgba(20,14,4,.45)] backdrop-blur-[6px] transition-all duration-300 ${
+        className={`reader-nav-affordance absolute top-1/2 flex h-14 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-gold/20 bg-sheet/20 text-[color:var(--canvas-fg)] shadow-[0_10px_30px_-18px_rgba(20,14,4,.45)] backdrop-blur-[6px] transition-[opacity,transform,background-color,border-color] duration-300 ${
           side === "left" ? "left-2" : "right-2"
       }`}
       >

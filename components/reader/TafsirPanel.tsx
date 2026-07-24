@@ -17,6 +17,9 @@ import type { PageTafsir, TafsirEntry } from "@/lib/tafsir/types";
 import type { AyahRef, QuranAudioController } from "@/lib/audio/useQuranAudio";
 import AyahPlayButton, { type AyahPlayState } from "./AyahPlayButton";
 import PagePlayButton from "./PagePlayButton";
+import { usePresence } from "@/components/motion/Presence";
+import { useOverlayFocus } from "@/components/motion/useOverlayFocus";
+import { MOTION } from "@/lib/motion";
 
 const arNum = (n: number) => n.toLocaleString("ar-EG");
 
@@ -181,6 +184,9 @@ export default function TafsirPanel({
   // page's — easy to miss. A sticky pill row tracks which page's section is
   // under the reader's eyes and jumps between them.
   const scrollRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  const presence = usePresence(open, MOTION.duration.panel);
+  useOverlayFocus(open, presence.mounted, panelRef, onClose);
   const pagesKey = pages.join(",");
   // Keyed by the spread it was measured on, so a page flip resets the pills
   // to "first page" by DERIVATION — no setState inside an effect (lint).
@@ -267,28 +273,35 @@ export default function TafsirPanel({
     [toggleAyah, fullQueue]
   );
 
+  if (!presence.mounted) return null;
+  const interactive = open && presence.phase !== "exiting";
+
   return (
     <>
       {/* backdrop (click to close) */}
       <div
-        className={`drawer-backdrop fixed inset-0 z-[44] bg-ink/15 backdrop-blur-[1px] ${
-          open ? "drawer-backdrop-open" : "drawer-backdrop-closed"
+        className={`drawer-backdrop drawer-backdrop-present fixed inset-0 z-[44] bg-ink/15 backdrop-blur-[1px] ${
+          presence.phase === "visible" ? "drawer-backdrop-open" : "drawer-backdrop-closed"
         }`}
         onClick={onClose}
         aria-hidden
+        data-presence={presence.phase}
       />
 
       <aside
+        ref={panelRef}
+        tabIndex={-1}
         aria-label="التفسير"
-        aria-hidden={!open}
-        inert={!open}
+        aria-hidden={!interactive}
+        inert={!interactive}
         // Right drawer on the reading-start side; bottom sheet on mobile.
         // Same surface and motion as the reading panel, mirrored.
-        className={`reader-drawer reader-drawer-right fixed z-[45] flex flex-col bg-paper/85 backdrop-blur-2xl backdrop-saturate-105 max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[78svh] max-sm:rounded-t-2xl max-sm:border-t max-sm:border-gold/25 sm:inset-y-0 sm:right-0 sm:w-[400px] sm:max-w-[86vw] sm:border-e sm:border-gold/20 sm:shadow-[-24px_0_60px_-30px_rgba(40,30,14,.5)] ${
-          open
+        className={`reader-drawer reader-drawer-present reader-drawer-right fixed z-[45] flex flex-col bg-paper/85 backdrop-blur-2xl backdrop-saturate-105 max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[78svh] max-sm:rounded-t-2xl max-sm:border-t max-sm:border-gold/25 sm:inset-y-0 sm:right-0 sm:w-[400px] sm:max-w-[86vw] sm:border-e sm:border-gold/20 sm:shadow-[-24px_0_60px_-30px_rgba(40,30,14,.5)] ${
+          presence.phase === "visible"
             ? "reader-drawer-open"
             : "reader-drawer-closed-right"
         }`}
+        data-presence={presence.phase}
       >
         <div className="flex items-center justify-between px-5 pt-[22px]">
           <h2 className="font-display text-[22px] text-accent">التفسير</h2>
