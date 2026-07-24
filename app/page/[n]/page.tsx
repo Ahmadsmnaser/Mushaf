@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import Reader from "@/components/reader/Reader";
-import { PAGE_COUNT } from "@/lib/mushaf/source";
+import { getSurahMeta, PAGE_COUNT } from "@/lib/mushaf/source";
 import { SITE_DESCRIPTION, SITE_NAME } from "@/lib/site";
 import { isVerseKey, type VerseKey } from "@/lib/mushaf/ayahRegions";
 import { pageContainsVerse } from "@/lib/mushaf/ayahPageIndex.server";
@@ -40,13 +40,29 @@ export default async function ReaderPage({
   searchParams,
 }: {
   params: Promise<{ n: string }>;
-  searchParams: Promise<{ ayah?: string | string[] }>;
+  searchParams: Promise<{
+    ayah?: string | string[];
+    surah?: string | string[];
+  }>;
 }) {
   const n = Number((await params).n);
   if (!Number.isInteger(n) || n < 1 || n > PAGE_COUNT) redirect("/page/1");
-  const rawAyah = (await searchParams).ayah;
+  const query = await searchParams;
+  const rawSurah = Array.isArray(query.surah) ? query.surah[0] : query.surah;
+  const surahNumber = rawSurah ? Number(rawSurah) : null;
+  const surahMeta = surahNumber ? getSurahMeta(surahNumber) : null;
+  if (surahMeta && n !== surahMeta.first_page) {
+    redirect(`/page/${surahMeta.first_page}?surah=${surahMeta.id}`);
+  }
+  const rawAyah = query.ayah;
   const candidate = Array.isArray(rawAyah) ? rawAyah[0] : rawAyah;
   const initialAyahKey: VerseKey | null =
     candidate && isVerseKey(candidate) && pageContainsVerse(n, candidate) ? candidate : null;
-  return <Reader initialPage={n} initialAyahKey={initialAyahKey} />;
+  return (
+    <Reader
+      initialPage={n}
+      initialAyahKey={initialAyahKey}
+      initialSurahNumber={surahMeta?.id ?? null}
+    />
+  );
 }

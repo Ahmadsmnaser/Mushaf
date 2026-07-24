@@ -15,6 +15,13 @@ function verseLabel(verseKey: string | null): string {
   return m ? `${arNum(Number(m[1]))}:${arNum(Number(m[2]))}` : "—";
 }
 
+function playbackLabel(audio: QuranAudioController): string {
+  if (audio.playbackMode === "surah" && audio.currentSurahNumber) {
+    return `س ${arNum(audio.currentSurahNumber)}`;
+  }
+  return verseLabel(audio.currentVerseKey);
+}
+
 function PlayIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="play-icon h-3.5 w-3.5" aria-hidden>
@@ -145,7 +152,7 @@ export default function AudioMiniBar({ audio }: { audio: QuranAudioController })
       <span aria-hidden className="h-px w-5 bg-gold/25" />
 
       <span className="py-0.5 text-[10px] leading-none text-ink-soft" dir="rtl">
-        {verseLabel(audio.currentVerseKey)}
+        {playbackLabel(audio)}
       </span>
 
       <BarButton label="الآية السابقة" onClick={audio.prev} disabled={!audio.hasPrev}>

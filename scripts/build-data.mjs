@@ -103,16 +103,25 @@ function normalizeSurahs(rawSurahs) {
       const id = readInt(raw.id ?? raw.chapter_id ?? raw.chapterId, "id", "surah");
       const nameArabic = raw.name_arabic ?? raw.name_ar ?? raw.arabic_name;
       const nameSimple = raw.name_simple ?? raw.name_en ?? raw.name ?? raw.transliteration;
+      const revelationOrder = readInt(raw.revelation_order, "revelation_order", `surah ${id}`);
+      const ayahCount = readInt(raw.verses_count, "verses_count", `surah ${id}`);
+      const revelationPlace = raw.revelation_place;
       if (typeof nameArabic !== "string" || nameArabic.length === 0) {
         throw new Error(`Surah ${id} has missing name_arabic`);
       }
       if (typeof nameSimple !== "string" || nameSimple.length === 0) {
         throw new Error(`Surah ${id} has missing name_simple/name`);
       }
+      if (revelationPlace !== "makkah" && revelationPlace !== "madinah") {
+        throw new Error(`Surah ${id} has invalid revelation_place`);
+      }
       return {
         id,
         name_ar: nameArabic,
         name_en: nameSimple,
+        revelation_place: revelationPlace,
+        revelation_order: revelationOrder,
+        ayah_count: ayahCount,
         first_page: Infinity,
         last_page: 0,
       };
@@ -189,6 +198,12 @@ if (ayahs.length !== AYAH_COUNT) throw new Error(`Expected ${AYAH_COUNT} ayahs, 
 if (seen.size !== AYAH_COUNT) throw new Error(`Expected ${AYAH_COUNT} unique verse keys, got ${seen.size}`);
 for (const surah of surahs) {
   if (!Number.isFinite(surah.first_page)) throw new Error(`Surah ${surah.id} has no ayahs`);
+  const actualCount = ayahs.filter((ayah) => ayah.surah === surah.id).length;
+  if (actualCount !== surah.ayah_count) {
+    throw new Error(
+      `Surah ${surah.id} metadata says ${surah.ayah_count} ayahs, corpus has ${actualCount}`
+    );
+  }
 }
 for (let i = 0; i < PAGE_COUNT; i++) {
   if (pages[i].juz === 0 || pages[i].surahs.length === 0) {
@@ -208,6 +223,17 @@ await writeFile(
   path.join(dataDir, "indexes.json"),
   JSON.stringify({ surahs, juzs, pages })
 );
+await writeFile(
+  path.join(dataDir, "surah-details.json"),
+  JSON.stringify(
+    surahs.map((surah) => ({
+      id: surah.id,
+      revelationOrder: surah.revelation_order,
+      revelationPlace: surah.revelation_place,
+      ayahCount: surah.ayah_count,
+    }))
+  )
+);
 await writeFile(path.join(publicDataDir, "search-index.json"), JSON.stringify(searchIndex));
 
 for (const page of pageAyat) {
@@ -219,5 +245,6 @@ for (const page of pageAyat) {
 
 console.log(`Read QUL inputs from ${path.relative(ROOT, RAW_DIR)}`);
 console.log(`Wrote indexes.json (${surahs.length} surahs, ${juzs.length} juzs, ${pages.length} pages)`);
+console.log(`Wrote surah-details.json (${surahs.length} surahs)`);
 console.log(`Wrote search-index.json (${searchIndex.length} ayahs)`);
 console.log(`Wrote page-ayaat (${pageAyat.length} pages)`);

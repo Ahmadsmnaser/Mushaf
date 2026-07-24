@@ -4,7 +4,13 @@
 // (reciter, page) for the session; failures evict themselves so a retry can
 // succeed. Only the mp3 STREAM goes straight to the CDN, via <audio src>.
 
-import type { AudioApiError, AudioErrorCode, PageAudio, ReciterId } from "./types";
+import type {
+  AudioApiError,
+  AudioErrorCode,
+  ChapterAudio,
+  PageAudio,
+  ReciterId,
+} from "./types";
 
 export class AudioError extends Error {
   constructor(
@@ -55,6 +61,7 @@ async function requestJson(url: string): Promise<unknown> {
 }
 
 const pageCache = new Map<string, Promise<PageAudio>>();
+const chapterCache = new Map<string, Promise<ChapterAudio>>();
 
 export function fetchPageAudio(reciter: ReciterId, page: number): Promise<PageAudio> {
   const key = `${reciter}:${page}`;
@@ -70,6 +77,32 @@ export function fetchPageAudio(reciter: ReciterId, page: number): Promise<PageAu
     pageCache.set(key, p);
   }
   return pageCache.get(key)!;
+}
+
+export function fetchChapterAudio(
+  reciter: ReciterId,
+  surahNumber: number
+): Promise<ChapterAudio> {
+  const key = `${reciter}:${surahNumber}`;
+  if (!chapterCache.has(key)) {
+    const promise = requestJson(
+      `/api/audio?reciter=${reciter}&surah=${surahNumber}`
+    ).then((body) => {
+      const data = body as ChapterAudio;
+      if (
+        !data ||
+        data.surahNumber !== surahNumber ||
+        typeof data.audioUrl !== "string" ||
+        !data.audioUrl
+      ) {
+        throw new AudioError("upstream_shape", AUDIO_ERROR_MESSAGES.upstream_shape);
+      }
+      return data;
+    });
+    promise.catch(() => chapterCache.delete(key));
+    chapterCache.set(key, promise);
+  }
+  return chapterCache.get(key)!;
 }
 
 /** Resolve one ayah's mp3 URL from its page's (cached) audio manifest. */

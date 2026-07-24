@@ -11,7 +11,13 @@
 //     https://verses.quran.com/ (spot-checked: 206 audio/mpeg). The public
 //     endpoint needs no credentials — same as the muyassar tafsir provider.
 
-import type { AyahAudio, AudioErrorCode, PageAudio, Reciter } from "./types";
+import type {
+  AyahAudio,
+  AudioErrorCode,
+  ChapterAudio,
+  PageAudio,
+  Reciter,
+} from "./types";
 
 const QURAN_COM_V4 = "https://api.quran.com/api/v4";
 const AUDIO_CDN = "https://verses.quran.com/";
@@ -96,4 +102,19 @@ export async function getPageAudio(reciter: Reciter, page: number): Promise<Page
     );
   }
   return { pageNumber: page, reciterId: reciter.id, ayahs };
+}
+
+export function getChapterAudio(reciter: Reciter, surahNumber: number): ChapterAudio {
+  if (!reciter.chapterAudio) {
+    throw new AudioProviderError(
+      "reciter_not_configured",
+      `Reciter "${reciter.id}" has no verified chapter-level audio`
+    );
+  }
+  const file = String(surahNumber).padStart(3, "0");
+  return {
+    surahNumber,
+    reciterId: reciter.id,
+    audioUrl: `https://download.quranicaudio.com/quran/${reciter.chapterAudio.directory}/${file}.mp3`,
+  };
 }

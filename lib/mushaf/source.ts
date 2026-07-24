@@ -14,6 +14,8 @@
 // credentials stay server-side; the interface below should not need to change.
 
 import indexes from "./data/indexes.json";
+import ksuPageSurahs from "./data/ksu-page-surahs.json";
+import surahDetails from "./data/surah-details.json";
 import {
   CURRENT_MUSHAF_SOURCE_ID,
   MUSHAF_SOURCES,
@@ -30,9 +32,47 @@ export interface SurahMeta {
   id: number;
   name_ar: string;
   name_en: string;
+  revelation_place: "makkah" | "madinah";
+  revelation_order: number;
+  ayah_count: number;
   first_page: number;
   last_page: number;
 }
+
+const ksuSurahPageRanges = new Map<number, { firstPage: number; lastPage: number }>();
+
+for (const entry of ksuPageSurahs) {
+  for (const surahNumber of entry.surahs) {
+    const current = ksuSurahPageRanges.get(surahNumber);
+    if (current) {
+      current.lastPage = entry.pageNumber;
+    } else {
+      ksuSurahPageRanges.set(surahNumber, {
+        firstPage: entry.pageNumber,
+        lastPage: entry.pageNumber,
+      });
+    }
+  }
+}
+
+const SURAH_INDEX: SurahMeta[] = indexes.surahs.map((surah, index) => {
+  const details = surahDetails[index];
+  const pageRange = ksuSurahPageRanges.get(surah.id);
+  if (!details || details.id !== surah.id) {
+    throw new Error(`Missing QUL metadata for Surah ${surah.id}`);
+  }
+  if (!pageRange) {
+    throw new Error(`Missing KSU page range for Surah ${surah.id}`);
+  }
+  return {
+    ...surah,
+    first_page: pageRange.firstPage,
+    last_page: pageRange.lastPage,
+    revelation_place: details.revelationPlace as "makkah" | "madinah",
+    revelation_order: details.revelationOrder,
+    ayah_count: details.ayahCount,
+  };
+});
 
 export interface JuzMeta {
   number: number;
@@ -42,6 +82,8 @@ export interface JuzMeta {
 export interface PageMeta {
   pageNumber: number;
   imageUrl: string;
+  /** Canonical Surah numbers appearing on this page, in reading order. */
+  surahNumbers: number[];
   /** Arabic names of the surahs appearing on this page, in reading order. */
   surahs: string[];
   juz: number;
@@ -112,7 +154,14 @@ export function getPageImageUrl(pageNumber: number): string {
 }
 
 export function getSurahIndex(): SurahMeta[] {
-  return indexes.surahs;
+  return SURAH_INDEX;
+}
+
+export function getSurahMeta(surahNumber: number): SurahMeta | null {
+  if (!Number.isInteger(surahNumber) || surahNumber < 1 || surahNumber > 114) {
+    return null;
+  }
+  return getSurahIndex()[surahNumber - 1] ?? null;
 }
 
 export function getJuzIndex(): JuzMeta[] {
@@ -122,10 +171,17 @@ export function getJuzIndex(): JuzMeta[] {
 export function getPageMeta(pageNumber: number): PageMeta {
   const n = clampPage(pageNumber);
   const raw = indexes.pages[n - 1];
+  // Visible Surahs must follow the exact KSU image/overlay edition. Generic
+  // Quran page metadata differs at a few cross-page boundaries.
+  const ksuPage = ksuPageSurahs[n - 1];
+  if (!ksuPage || ksuPage.pageNumber !== n) {
+    throw new Error(`Missing KSU Surah mapping for page ${n}`);
+  }
   return {
     pageNumber: n,
     imageUrl: getPageImageUrl(n),
-    surahs: raw.surahs.map((id) => indexes.surahs[id - 1].name_ar),
+    surahNumbers: [...ksuPage.surahs],
+    surahs: ksuPage.surahs.map((id) => indexes.surahs[id - 1].name_ar),
     juz: raw.juz,
     hizb: raw.hizb,
   };
@@ -160,6 +216,14 @@ interface RawAyah {
   a: number;
   p: number;
   t: string;
+}
+
+export interface SurahAyah {
+  verseKey: string;
+  surahNumber: number;
+  ayahNumber: number;
+  pageNumber: number;
+  text: string;
 }
 
 // Harakat/tanween/sukun/shadda, dagger alif, tatweel, Quranic annotation
@@ -218,16 +282,54 @@ interface CorpusEntry {
   map: number[];
 }
 
+let rawCorpusPromise: Promise<RawAyah[]> | null = null;
 let corpusPromise: Promise<CorpusEntry[]> | null = null;
 
-async function loadCorpus(): Promise<CorpusEntry[]> {
+async function loadRawCorpus(): Promise<RawAyah[]> {
   const res = await fetch("/data/search-index.json");
   if (!res.ok) throw new Error(`search index fetch failed: HTTP ${res.status}`);
-  const raw: RawAyah[] = await res.json();
+  return (await res.json()) as RawAyah[];
+}
+
+function loadRawCorpusCached(): Promise<RawAyah[]> {
+  if (!rawCorpusPromise) {
+    rawCorpusPromise = loadRawCorpus().catch((err) => {
+      rawCorpusPromise = null;
+      throw err;
+    });
+  }
+  return rawCorpusPromise;
+}
+
+async function loadCorpus(): Promise<CorpusEntry[]> {
+  const raw = await loadRawCorpusCached();
   return raw.map((r) => {
     const { norm, map } = normalizeWithMap(r.t);
     return { raw: r, norm, map };
   });
+}
+
+/** Exact local QPC Hafs text for one complete Surah, in canonical Ayah order. */
+export async function getSurahAyahs(surahNumber: number): Promise<SurahAyah[]> {
+  const meta = getSurahMeta(surahNumber);
+  if (!meta) throw new Error("invalid_surah");
+  const raw = await loadRawCorpusCached();
+  const ayahs = raw
+    .filter((ayah) => ayah.s === surahNumber)
+    .map((ayah) => ({
+      verseKey: ayah.k,
+      surahNumber: ayah.s,
+      ayahNumber: ayah.a,
+      pageNumber: ayah.p,
+      text: ayah.t,
+    }));
+  if (
+    ayahs.length !== meta.ayah_count ||
+    ayahs.some((ayah, index) => ayah.ayahNumber !== index + 1)
+  ) {
+    throw new Error(`incomplete_surah_${surahNumber}`);
+  }
+  return ayahs;
 }
 
 function loadCorpusCached(): Promise<CorpusEntry[]> {

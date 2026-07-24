@@ -11,6 +11,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "verify:coordinates": "tsx scripts/verify-ayah-coordinates.ts",
+    "verify:surah-guide-source": "node scripts/verify-surah-guide-source.mjs",
     "render:overlay-audit": "tsx scripts/render-ayah-overlay-audit.ts"
   },
   "dependencies": {

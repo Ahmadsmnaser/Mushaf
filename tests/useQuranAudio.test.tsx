@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useQuranAudio } from "@/lib/audio/useQuranAudio";
-import { resolveAyahAudioUrl } from "@/lib/audio/service";
+import { fetchChapterAudio, resolveAyahAudioUrl } from "@/lib/audio/service";
 
 vi.mock("@/lib/audio/service", async () => {
   const actual = await vi.importActual<typeof import("@/lib/audio/service")>(
@@ -10,6 +10,11 @@ vi.mock("@/lib/audio/service", async () => {
   return {
     ...actual,
     resolveAyahAudioUrl: vi.fn().mockResolvedValue("https://audio.test/1.mp3"),
+    fetchChapterAudio: vi.fn().mockResolvedValue({
+      surahNumber: 85,
+      reciterId: "minshawi",
+      audioUrl: "https://audio.test/085.mp3",
+    }),
   };
 });
 
@@ -36,6 +41,43 @@ class FakeAudio extends EventTarget {
     }
   }
 }
+
+describe("useQuranAudio Surah playback", () => {
+  let instances: FakeAudio[];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    instances = [];
+    vi.stubGlobal(
+      "Audio",
+      class extends FakeAudio {
+        constructor() {
+          super();
+          instances.push(this);
+        }
+      }
+    );
+  });
+
+  it("plays, pauses, and resumes one gapless Surah in the shared element", async () => {
+    const { result } = renderHook(() => useQuranAudio());
+    act(() => result.current.toggleSurah(85));
+    await waitFor(() => expect(fetchChapterAudio).toHaveBeenCalledWith("minshawi", 85));
+    await waitFor(() => expect(result.current.isPlaying).toBe(true));
+    expect(result.current.playbackMode).toBe("surah");
+    expect(result.current.currentSurahNumber).toBe(85);
+    expect(result.current.currentVerseKey).toBeNull();
+    expect(instances).toHaveLength(1);
+
+    act(() => result.current.toggleSurah(85));
+    expect(instances[0].pause).toHaveBeenCalled();
+    expect(result.current.isPlaying).toBe(false);
+
+    act(() => result.current.toggleSurah(85));
+    await waitFor(() => expect(result.current.isPlaying).toBe(true));
+    expect(instances).toHaveLength(1);
+  });
+});
 
 describe("useQuranAudio repetition", () => {
   let instances: FakeAudio[];

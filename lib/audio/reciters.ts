@@ -16,6 +16,12 @@ export const RECITERS: Partial<Record<ReciterId, Reciter>> = {
     // api.quran.com/api/v4: id 9 = "Mohamed Siddiq al-Minshawi", Murattal
     // (ayah-by-ayah; id 8 is his Mujawwad set).
     recitationId: 9,
+    // QUL recitation resource 396 / QuranicAudio gapless Murattal set.
+    // Representative files (001, 075, 085, 114) were verified as audio/mpeg.
+    chapterAudio: {
+      provider: "quranicaudio",
+      directory: "muhammad_siddeeq_al-minshaawee",
+    },
   },
 };
 

@@ -13,7 +13,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_RECITER_ID, getReciter } from "./reciters";
-import { AUDIO_ERROR_MESSAGES, AudioError, resolveAyahAudioUrl } from "./service";
+import {
+  AUDIO_ERROR_MESSAGES,
+  AudioError,
+  fetchChapterAudio,
+  resolveAyahAudioUrl,
+} from "./service";
 import type { Reciter } from "./types";
 
 /** An ayah the reader can play: its key plus the mushaf page that lists it. */
@@ -22,11 +27,12 @@ export interface AyahRef {
   pageNumber: number;
 }
 
-export type PlaybackMode = "single-ayah" | "repeat-ayah" | "page";
+export type PlaybackMode = "single-ayah" | "repeat-ayah" | "page" | "surah";
 
 interface PlayerState {
   /** The ayah the player is on — sounding, paused or stopped-at. */
   currentVerseKey: string | null;
+  currentSurahNumber: number | null;
   isLoading: boolean;
   isPlaying: boolean;
   playbackMode: PlaybackMode | null;
@@ -40,6 +46,7 @@ interface PlayerState {
 
 const IDLE: PlayerState = {
   currentVerseKey: null,
+  currentSurahNumber: null,
   isLoading: false,
   isPlaying: false,
   playbackMode: null,
@@ -64,6 +71,8 @@ export interface QuranAudioController extends PlayerState {
   repeatAyah: (ayah: AyahRef, count?: number) => void;
   /** Play the given ayahs in order; if page playback is sounding, stop it. */
   togglePage: (queue: AyahRef[]) => void;
+  /** Play/pause one verified gapless chapter file in the shared element. */
+  toggleSurah: (surahNumber: number) => void;
   pause: () => void;
   /** Resume the paused ayah, or replay the stopped-at one. */
   resume: () => void;
@@ -85,8 +94,9 @@ export function useQuranAudio(): QuranAudioController {
   const indexRef = useRef(0);
   const modeRef = useRef<PlaybackMode>("single-ayah");
   const repeatRemainingRef = useRef(0);
-  /** verseKey whose mp3 is loaded in the element (resume without refetch). */
+  /** `ayah:{key}` or `surah:{number}` loaded in the shared element. */
   const loadedRef = useRef<string | null>(null);
+  const currentSurahRef = useRef<number | null>(null);
   // Bumped by every user action; async continuations compare against it.
   const generationRef = useRef(0);
   // startAt is recursive through the 'ended' event; a ref breaks the cycle.
@@ -128,6 +138,7 @@ export function useQuranAudio(): QuranAudioController {
       modeRef.current = mode;
       commit({
         currentVerseKey: ayah.verseKey,
+        currentSurahNumber: null,
         isLoading: true,
         isPlaying: false,
         playbackMode: mode,
@@ -139,7 +150,7 @@ export function useQuranAudio(): QuranAudioController {
         if (generation !== generationRef.current) return;
         const el = getAudio();
         el.src = url;
-        loadedRef.current = ayah.verseKey;
+        loadedRef.current = `ayah:${ayah.verseKey}`;
         await el.play();
         if (generation !== generationRef.current) return;
         commit({ isLoading: false, isPlaying: true });
@@ -183,6 +194,7 @@ export function useQuranAudio(): QuranAudioController {
     haltElement();
     queueRef.current = [];
     repeatRemainingRef.current = 0;
+    currentSurahRef.current = null;
     indexRef.current = 0;
     setState(IDLE);
   }, [haltElement]);
@@ -194,9 +206,13 @@ export function useQuranAudio(): QuranAudioController {
 
   const resume = useCallback(() => {
     const current = queueRef.current[indexRef.current];
-    if (!current) return;
     const el = audioRef.current;
-    if (el && loadedRef.current === current.verseKey && el.currentSrc) {
+    const loadedKey = current
+      ? `ayah:${current.verseKey}`
+      : currentSurahRef.current
+        ? `surah:${currentSurahRef.current}`
+        : null;
+    if (el && loadedKey && loadedRef.current === loadedKey && el.currentSrc) {
       // Still loaded: resume in place (play() restarts from 0 after 'ended').
       const generation = generationRef.current;
       el.play()
@@ -208,10 +224,31 @@ export function useQuranAudio(): QuranAudioController {
         .catch(() => {
           // superseded by a stop/new play — nothing to report
         });
-    } else {
+    } else if (current) {
       void startAt(indexRef.current, modeRef.current, ++generationRef.current);
+    } else if (currentSurahRef.current) {
+      const surahNumber = currentSurahRef.current;
+      const generation = ++generationRef.current;
+      commit({ isLoading: true, error: null, active: true });
+      void fetchChapterAudio(reciter.id, surahNumber)
+        .then(async (chapter) => {
+          if (generation !== generationRef.current) return;
+          const audio = getAudio();
+          audio.src = chapter.audioUrl;
+          loadedRef.current = `surah:${surahNumber}`;
+          await audio.play();
+          if (generation === generationRef.current) {
+            commit({ isLoading: false, isPlaying: true });
+          }
+        })
+        .catch((err) => {
+          if (generation === generationRef.current) {
+            loadedRef.current = null;
+            commit({ isLoading: false, isPlaying: false, error: toErrorMessage(err) });
+          }
+        });
     }
-  }, [commit, startAt]);
+  }, [commit, getAudio, reciter.id, startAt]);
 
   const next = useCallback(() => {
     if (indexRef.current + 1 < queueRef.current.length) {
@@ -238,6 +275,7 @@ export function useQuranAudio(): QuranAudioController {
           : [ayah];
       generationRef.current++;
       repeatRemainingRef.current = 0;
+      currentSurahRef.current = null;
       audioRef.current?.pause();
       queueRef.current = [...queue];
       const index = queue.findIndex((a) => a.verseKey === ayah.verseKey);
@@ -254,6 +292,7 @@ export function useQuranAudio(): QuranAudioController {
       queueRef.current = [ayah];
       indexRef.current = 0;
       repeatRemainingRef.current = repetitions;
+      currentSurahRef.current = null;
       void startAt(0, "repeat-ayah", generationRef.current);
     },
     [startAt]
@@ -268,11 +307,74 @@ export function useQuranAudio(): QuranAudioController {
       if (queue.length === 0) return;
       generationRef.current++;
       repeatRemainingRef.current = 0;
+      currentSurahRef.current = null;
       audioRef.current?.pause();
       queueRef.current = [...queue];
       void startAt(0, "page", generationRef.current);
     },
     [state.playbackMode, state.isPlaying, state.isLoading, stop, startAt]
+  );
+
+  const toggleSurah = useCallback(
+    (surahNumber: number) => {
+      if (!Number.isInteger(surahNumber) || surahNumber < 1 || surahNumber > 114) {
+        commit({ error: AUDIO_ERROR_MESSAGES.invalid_params });
+        return;
+      }
+      if (
+        state.playbackMode === "surah" &&
+        state.currentSurahNumber === surahNumber
+      ) {
+        if (state.isPlaying || state.isLoading) stop();
+        else resume();
+        return;
+      }
+
+      const generation = ++generationRef.current;
+      audioRef.current?.pause();
+      queueRef.current = [];
+      indexRef.current = 0;
+      repeatRemainingRef.current = 0;
+      currentSurahRef.current = surahNumber;
+      modeRef.current = "surah";
+      commit({
+        currentVerseKey: null,
+        currentSurahNumber: surahNumber,
+        isLoading: true,
+        isPlaying: false,
+        playbackMode: "surah",
+        error: null,
+        active: true,
+      });
+
+      void fetchChapterAudio(reciter.id, surahNumber)
+        .then(async (chapter) => {
+          if (generation !== generationRef.current) return;
+          const element = getAudio();
+          element.src = chapter.audioUrl;
+          loadedRef.current = `surah:${surahNumber}`;
+          await element.play();
+          if (generation === generationRef.current) {
+            commit({ isLoading: false, isPlaying: true });
+          }
+        })
+        .catch((err) => {
+          if (generation !== generationRef.current) return;
+          loadedRef.current = null;
+          commit({ isLoading: false, isPlaying: false, error: toErrorMessage(err) });
+        });
+    },
+    [
+      commit,
+      getAudio,
+      reciter.id,
+      resume,
+      state.currentSurahNumber,
+      state.isLoading,
+      state.isPlaying,
+      state.playbackMode,
+      stop,
+    ]
   );
 
   // Unmount: silence the element and drop it (its listener dies with it).
@@ -293,6 +395,7 @@ export function useQuranAudio(): QuranAudioController {
     toggleAyah,
     repeatAyah,
     togglePage,
+    toggleSurah,
     pause,
     resume,
     next,

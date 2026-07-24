@@ -3,13 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   clampPage,
+  getSurahAyahs,
+  getSurahMeta,
   getPageMeta,
   pageToSpreadStart,
   PAGE_COUNT,
+  type SurahMeta,
   type VerseNavigationTarget,
 } from "@/lib/mushaf/source";
 import { getMushafTreatment } from "@/lib/readerSettings";
-import { saveLastRead } from "@/lib/useLastRead";
+import { saveLastRead, useLastRead } from "@/lib/useLastRead";
 import { useMarks } from "@/lib/useMarks";
 import { useSyncedReaderSettings } from "@/lib/useSyncedReaderSettings";
 import { useAutoHideToolbar } from "@/lib/useAutoHideToolbar";
@@ -35,6 +38,18 @@ import type { MenuAnchorRect } from "./AyahOverlay";
 import { loadSpreadImages } from "@/lib/mushaf/pageImageLoader";
 import { MOTION, prefersReducedMotion } from "@/lib/motion";
 import { usePresence } from "@/components/motion/Presence";
+import SurahQuickCard from "./SurahQuickCard";
+import SurahGuide from "./SurahGuide";
+import BottomPageScrubber from "./page-scrubber/BottomPageScrubber";
+import {
+  bareSurahName,
+  canonicalSurahUrl,
+  formatSurahCopy,
+  LONG_SURAH_COPY_THRESHOLD,
+  verseAyahNumber,
+  verseSurahNumber,
+  type SurahCopyFormat,
+} from "@/lib/surah";
 
 const FLIP_MS = 560;
 const ZOOM_STEPS = [1, 1.25, 1.5, 2] as const;
@@ -114,9 +129,11 @@ interface SpreadSwap {
 export default function Reader({
   initialPage,
   initialAyahKey = null,
+  initialSurahNumber = null,
 }: {
   initialPage: number;
   initialAyahKey?: VerseKey | null;
+  initialSurahNumber?: number | null;
 }) {
   const [page, setPage] = useState(() => clampPage(initialPage));
   const [flip, setFlip] = useState<Flip | null>(null);
@@ -151,6 +168,16 @@ export default function Reader({
   const [marksTarget, setMarksTarget] = useState<AyahOverlayRecord | null>(null);
   const [ayahStatus, setAyahStatus] = useState("");
   const [ayahStatusVisual, setAyahStatusVisual] = useState("");
+  const [surahCard, setSurahCard] = useState<{
+    meta: SurahMeta;
+    anchor: MenuAnchorRect;
+  } | null>(null);
+  const [surahCardVisual, setSurahCardVisual] = useState<{
+    meta: SurahMeta;
+    anchor: MenuAnchorRect;
+  } | null>(null);
+  const [surahGuideMeta, setSurahGuideMeta] = useState<SurahMeta | null>(null);
+  const [surahGuideOpen, setSurahGuideOpen] = useState(false);
   const showAyahStatus = useCallback((message: string) => {
     setAyahStatus(message);
     setAyahStatusVisual(message);
@@ -173,6 +200,7 @@ export default function Reader({
   // frame of a page turn — always shares one treatment.
   const mushafTreatment = getMushafTreatment(readerTheme);
   const idle = useAutoHideToolbar(5000);
+  const lastReadPage = useLastRead();
   const {
     marks,
     addMark,
@@ -196,6 +224,7 @@ export default function Reader({
   const dragRef = useRef<{ x0: number; lastX: number; t0: number; w: number } | null>(null);
   const wheelUnlockRef = useRef<number | null>(null);
   const navigationBusyRef = useRef(false);
+  const scrubberOpenRef = useRef(false);
   const navigationRequestRef = useRef(0);
   const navigationAbortRef = useRef<AbortController | null>(null);
   const openingPendingRef = useRef(false);
@@ -208,6 +237,9 @@ export default function Reader({
   const panelOpenRef = useRef(false);
   const tafsirOpenRef = useRef(false);
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const surahTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const surahTriggerRefs = useRef(new Map<number, HTMLButtonElement>());
+  const initialSurahOpenedRef = useRef(false);
   const ayahMenuPresence = usePresence(
     Boolean(ayahMenu && mushaf.isOpen && !flip),
     MOTION.duration.popover
@@ -215,6 +247,40 @@ export default function Reader({
   const ayahStatusPresence = usePresence(
     Boolean(ayahStatus),
     MOTION.duration.popover
+  );
+  const surahCardPresence = usePresence(
+    Boolean(surahCard && mushaf.isOpen && !flip),
+    MOTION.duration.popover
+  );
+
+  const closeSurahCard = useCallback((restoreFocus: boolean) => {
+    const trigger = surahTriggerRef.current;
+    setSurahCard(null);
+    surahTriggerRef.current = null;
+    if (restoreFocus && trigger) requestAnimationFrame(() => trigger.focus());
+  }, []);
+
+  const openSurahCard = useCallback(
+    (meta: SurahMeta, trigger: HTMLButtonElement) => {
+      const rect = trigger.getBoundingClientRect();
+      const next = {
+        meta,
+        anchor: {
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          bottom: rect.bottom,
+          width: rect.width,
+          height: rect.height,
+        },
+      };
+      setAyahMenu(null);
+      setSurahGuideOpen(false);
+      setSurahCard(next);
+      setSurahCardVisual(next);
+      surahTriggerRef.current = trigger;
+    },
+    []
   );
 
   const clearAyahInteraction = useCallback((restoreFocus = false) => {
@@ -256,6 +322,8 @@ export default function Reader({
       trigger: HTMLButtonElement | null
     ) => {
       setSelectedVerseKey(record.verseKey);
+      setSurahCard(null);
+      setSurahGuideOpen(false);
       setPage(record.pageNumber);
       const nextMenu = { record, anchor };
       setAyahMenu(nextMenu);
@@ -283,8 +351,9 @@ export default function Reader({
   }, [single]);
 
   useEffect(() => {
-    modalOpenRef.current = jumpOpen || marksOpen || searchOpen;
-  }, [jumpOpen, marksOpen, searchOpen]);
+    modalOpenRef.current =
+      jumpOpen || marksOpen || searchOpen || Boolean(surahCard) || surahGuideOpen;
+  }, [jumpOpen, marksOpen, searchOpen, surahCard, surahGuideOpen]);
 
   useEffect(() => {
     panelOpenRef.current = panelOpen;
@@ -366,6 +435,8 @@ export default function Reader({
       setTafsirOpen(false);
       setJumpOpen(false);
       setMarksOpen(false);
+      setSurahCard(null);
+      setSurahGuideOpen(false);
       clearAyahInteraction(false);
       mushaf.close(side);
     },
@@ -430,6 +501,7 @@ export default function Reader({
         flipRef.current ||
         navigationBusyRef.current ||
         modalOpenRef.current ||
+        scrubberOpenRef.current ||
         !mushafOpenRef.current
       )
         return;
@@ -775,6 +847,10 @@ export default function Reader({
         }
         return;
       }
+      // The scrubber owns the keyboard while open: it handles its own arrows
+      // (when focused) and Escape, so the reader stays inert to avoid moving
+      // the real page during a preview.
+      if (scrubberOpenRef.current) return;
       if ((e.ctrlKey || e.metaKey) && e.code === "KeyK") {
         e.preventDefault();
         setMarksOpen(false);
@@ -818,6 +894,7 @@ export default function Reader({
         modalOpenRef.current ||
         panelOpenRef.current ||
         tafsirOpenRef.current || // wheel scrolls the tafsir text, not the book
+        scrubberOpenRef.current || // the scrubber owns the wheel while open
         !mushafOpenRef.current ||
         wheelUnlockRef.current !== null ||
         Math.abs(e.deltaY) < WHEEL_THRESHOLD
@@ -860,6 +937,23 @@ export default function Reader({
   const zoomOut = () => canZoomOut && setZoom(ZOOM_STEPS[zoomIndex - 1]);
 
   const s = pageToSpreadStart(page);
+  const metaRight = getPageMeta(single ? page : s);
+  const metaLeft = single ? null : getPageMeta(s + 1);
+  const visibleSurahMetas = Array.from(
+    new Set([...metaRight.surahNumbers, ...(metaLeft?.surahNumbers ?? [])])
+  )
+    .map(getSurahMeta)
+    .filter((meta): meta is SurahMeta => meta !== null);
+
+  useEffect(() => {
+    if (initialSurahOpenedRef.current || !initialSurahNumber) return;
+    const meta = visibleSurahMetas.find((item) => item.id === initialSurahNumber);
+    const trigger = surahTriggerRefs.current.get(initialSurahNumber);
+    if (!meta || !trigger) return;
+    initialSurahOpenedRef.current = true;
+    const frame = requestAnimationFrame(() => openSurahCard(meta, trigger));
+    return () => cancelAnimationFrame(frame);
+  }, [initialSurahNumber, openSurahCard, visibleSurahMetas]);
 
   const runAyahAction = useCallback(
     async (action: AyahMenuAction) => {
@@ -938,6 +1032,83 @@ export default function Reader({
     ]
   );
 
+  const currentAyahForSurah = useCallback(
+    (meta: SurahMeta): number => {
+      const priorityKeys = [selectedVerseKey, audio.currentVerseKey];
+      for (const key of priorityKeys) {
+        if (verseSurahNumber(key) === meta.id) {
+          const ayah = verseAyahNumber(key);
+          if (ayah && ayah <= meta.ayah_count) return ayah;
+        }
+      }
+      const visiblePages = single ? [page] : [s, s + 1];
+      const firstVisible = visiblePages
+        .flatMap((visiblePage) => visibleAyahs[visiblePage] ?? [])
+        .find((ayah) => ayah.surahNumber === meta.id);
+      return firstVisible?.ayahNumber ?? 1;
+    },
+    [audio.currentVerseKey, page, s, selectedVerseKey, single, visibleAyahs]
+  );
+
+  const navigateToSurahStart = useCallback(
+    (meta: SurahMeta) => {
+      const verseKey = `${meta.id}:1`;
+      if (!isVerseKey(verseKey)) {
+        showAyahStatus("تعذر تحديد بداية السورة.");
+        return;
+      }
+      closeSurahCard(false);
+      setSurahGuideOpen(false);
+      jumpTo(meta.first_page, verseKey);
+    },
+    [closeSurahCard, jumpTo, showAyahStatus]
+  );
+
+  const copySurah = useCallback(
+    async (meta: SurahMeta, format: SurahCopyFormat) => {
+      if (
+        meta.ayah_count > LONG_SURAH_COPY_THRESHOLD &&
+        !window.confirm(
+          `سيتم نسخ ${arNum(meta.ayah_count)} آية من سورة ${bareSurahName(meta.name_ar)}.`
+        )
+      ) {
+        return;
+      }
+      try {
+        const ayahs = await getSurahAyahs(meta.id);
+        const text = formatSurahCopy(meta, ayahs, format);
+        if (!navigator.clipboard?.writeText) throw new Error("clipboard_unavailable");
+        await navigator.clipboard.writeText(text);
+        showAyahStatus(`تم نسخ سورة ${bareSurahName(meta.name_ar)} كاملة.`);
+      } catch {
+        showAyahStatus("تعذر نسخ السورة. حاول مرة أخرى.");
+      }
+    },
+    [showAyahStatus]
+  );
+
+  const shareSurah = useCallback(
+    async (meta: SurahMeta) => {
+      const url = canonicalSurahUrl(window.location.origin, meta);
+      const title = `سورة ${bareSurahName(meta.name_ar)}`;
+      try {
+        if (navigator.share) {
+          await navigator.share({ title, url });
+          showAyahStatus("تمت مشاركة رابط السورة.");
+        } else {
+          if (!navigator.clipboard?.writeText) throw new Error("clipboard_unavailable");
+          await navigator.clipboard.writeText(url);
+          showAyahStatus("تم نسخ رابط السورة.");
+        }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          showAyahStatus("تعذرت مشاركة رابط السورة.");
+        }
+      }
+    },
+    [showAyahStatus]
+  );
+
   // RTL book mechanics: the unread stack is on the LEFT. Advancing from
   // (f, f+1) to (t, t+1) lifts the left page — the leaf carries f+1 on its
   // front, sweeps left → right over the spine, and lands as t on the right;
@@ -1007,8 +1178,6 @@ export default function Reader({
     }
   }
 
-  const metaRight = getPageMeta(single ? page : s);
-  const metaLeft = single ? null : getPageMeta(s + 1);
   // Bare names in the caption («البقرة», not «سُورَةُ البَقَرَةِ») — the
   // fixed-width toolbar chip has no room for the honorific, and the design
   // drops it too. The prefix is voweled in the data, so match it bare.
@@ -1244,8 +1413,42 @@ export default function Reader({
 
       {!mushaf.isSettledClosed && (
         <>
+      <nav
+        aria-label="السور الظاهرة"
+        dir="rtl"
+        className="surah-heading-strip fixed left-1/2 top-1.5 z-[43] flex max-w-[calc(100vw-7rem)] -translate-x-1/2 items-center gap-1 overflow-x-auto rounded-full border border-gold/25 bg-sheet/80 px-1.5 py-1 shadow-sm backdrop-blur-md"
+      >
+        {visibleSurahMetas.map((meta) => (
+          <button
+            key={meta.id}
+            ref={(node) => {
+              if (node) surahTriggerRefs.current.set(meta.id, node);
+              else surahTriggerRefs.current.delete(meta.id);
+            }}
+            type="button"
+            data-surah-trigger={meta.id}
+            aria-label={`فتح بطاقة سورة ${bareSurahName(meta.name_ar)}`}
+            aria-haspopup="dialog"
+            aria-expanded={surahCard?.meta.id === meta.id}
+            onClick={(event) => openSurahCard(meta, event.currentTarget)}
+            className="pressable shrink-0 cursor-pointer rounded-full px-3 py-1 font-display text-sm text-ink-soft hover:bg-accent/10 hover:text-accent focus-visible:bg-accent/10 focus-visible:text-accent"
+          >
+            {bareSurahName(meta.name_ar)}
+          </button>
+        ))}
+      </nav>
+
       <ReaderToolbar
-        idle={idle && !jumpOpen && !searchOpen && !marksOpen && !panelOpen && !tafsirOpen}
+        idle={
+          idle &&
+          !jumpOpen &&
+          !searchOpen &&
+          !marksOpen &&
+          !panelOpen &&
+          !tafsirOpen &&
+          !surahCard &&
+          !surahGuideOpen
+        }
         hidden={!mushaf.isOpen}
         caption={
           <>
@@ -1300,6 +1503,44 @@ export default function Reader({
       />
 
       <AudioMiniBar audio={audio} />
+
+      <BottomPageScrubber
+        currentPage={page}
+        pageCount={PAGE_COUNT}
+        disabled={
+          !mushaf.isOpen ||
+          Boolean(flip) ||
+          Boolean(spreadSwap) ||
+          jumpOpen ||
+          searchOpen ||
+          marksOpen ||
+          panelOpen ||
+          tafsirOpen ||
+          surahGuideOpen ||
+          Boolean(surahCard) ||
+          Boolean(ayahMenu)
+        }
+        onCommit={jumpTo}
+        isPageBookmarked={isPageBookmarked}
+        lastReadPage={lastReadPage}
+        viewportRef={scrollRef}
+        onActiveChange={(active) => {
+          scrubberOpenRef.current = active;
+        }}
+      />
+
+      <SurahGuide
+        open={surahGuideOpen}
+        meta={surahGuideMeta}
+        onClose={() => {
+          setSurahGuideOpen(false);
+          const trigger = surahTriggerRefs.current.get(surahGuideMeta?.id ?? 0);
+          if (trigger) requestAnimationFrame(() => trigger.focus());
+        }}
+        onNavigate={() => {
+          if (surahGuideMeta) navigateToSurahStart(surahGuideMeta);
+        }}
+      />
 
       <ReaderSidePanel
         open={panelOpen}
@@ -1371,6 +1612,25 @@ export default function Reader({
           bookmarked={isVerseBookmarked(ayahMenuVisual.record.verseKey)}
           onAction={(action) => void runAyahAction(action)}
           onClose={handleAyahMenuClose}
+        />
+      )}
+      {surahCardPresence.mounted && surahCardVisual && (
+        <SurahQuickCard
+          open={surahCardPresence.visible}
+          meta={surahCardVisual.meta}
+          anchor={surahCardVisual.anchor}
+          currentAyah={currentAyahForSurah(surahCardVisual.meta)}
+          audio={audio}
+          onClose={closeSurahCard}
+          onNavigate={() => navigateToSurahStart(surahCardVisual.meta)}
+          onCopy={(format) => copySurah(surahCardVisual.meta, format)}
+          onShare={() => shareSurah(surahCardVisual.meta)}
+          onOpenGuide={() => {
+            const meta = surahCardVisual.meta;
+            closeSurahCard(false);
+            setSurahGuideMeta(meta);
+            setSurahGuideOpen(true);
+          }}
         />
       )}
       {ayahStatusPresence.mounted && ayahStatusVisual && (

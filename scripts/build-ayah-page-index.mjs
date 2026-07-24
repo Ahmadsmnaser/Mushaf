@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const searchPath = join(root, "public", "data", "search-index.json");
 const pageKeyPath = join(root, "lib", "mushaf", "data", "ksu-page-verse-keys.json");
+const pageSurahPath = join(root, "lib", "mushaf", "data", "ksu-page-surahs.json");
 const pageDataDir = join(root, "public", "data", "page-ayaat");
 
 const verses = JSON.parse(await readFile(searchPath, "utf8"));
@@ -75,5 +76,19 @@ await writeFile(
   `${JSON.stringify(verses.map((verse) => ({ ...verse, p: correctedPageByKey.get(verse.k) })))}\n`,
   "utf8"
 );
+await writeFile(
+  pageSurahPath,
+  `${JSON.stringify(
+    pages.map((ayahs, index) => ({
+      pageNumber: index + 1,
+      surahs: [...new Set(ayahs.map((ayah) => ayah.surahNumber))],
+    })),
+    null,
+    2
+  )}\n`,
+  "utf8"
+);
 
-console.log(`Generated ${pages.length} page records from ${seen.size} QUL verses.`);
+console.log(
+  `Generated ${pages.length} page records and Surah boundaries from ${seen.size} QUL verses.`
+);

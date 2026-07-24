@@ -19,6 +19,15 @@ export interface Reciter {
    * live catalogue; the server refuses to serve it rather than guess.
    */
   recitationId?: number;
+  /**
+   * Verified gapless, chapter-level catalogue. Kept separate from the
+   * ayah-by-ayah Quran Foundation id because those identifiers are not
+   * interchangeable.
+   */
+  chapterAudio?: {
+    provider: "quranicaudio";
+    directory: string;
+  };
 }
 
 export interface AyahAudio {
@@ -35,6 +44,21 @@ export interface PageAudio {
   pageNumber: number;
   reciterId: ReciterId;
   ayahs: AyahAudio[];
+}
+
+export interface ChapterAudio {
+  surahNumber: number;
+  reciterId: ReciterId;
+  audioUrl: string;
+  /**
+   * Absent until the matching, versioned QUL segment resource is packaged
+   * and validated. The client must never estimate Ayah boundaries.
+   */
+  timestamps?: Array<{
+    verseKey: string;
+    fromMs: number;
+    toMs: number;
+  }>;
 }
 
 /** Machine-readable error codes from /api/audio; the UI maps them to Arabic. */
